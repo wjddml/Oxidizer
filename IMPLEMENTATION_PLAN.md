@@ -1,4 +1,4 @@
-# Oxidizer 통합 기획서 및 구현 계획
+# Oxidizer 통합 기획서 및 로드맵 (Integrated Master Plan)
 
 본 문서는 Oxidizer 프로젝트의 전체 개발 청사진을 담은 통합 기획서입니다.
 본 프로젝트는 인간의 변환 통찰력(Human Insight)을 기반으로 한 **'C-to-Rust 자동화 프롬프트 엔진'**을 흔들리지 않는 핵심 코어(Core Backbone)로 삼습니다. 이를 1차적으로 완벽히 구현한 뒤, 순수 프롬프트 변환이 가지는 한계(대용량 컨텍스트 소실, 복잡한 타입 추론 실패 등)를 극복하기 위해 최신 SOTA 논문들의 기법을 **성능 고도화 모듈(Advanced Enhancements)**로 점진적 통합하는 전략을 취합니다.
@@ -75,34 +75,32 @@
 - **LLM APIs:** `OpenAI API (GPT-4o)` or `Google Gemini API`
 - **Environment:** `Linux/Ubuntu` or `WSL2` (C2Rust 호환성 및 파이프라인 구동용)
 
-## 5. 단계별 개발 마일스톤 (3개월 / 약 12주 계획)
+## 5. 데이터셋 및 활용 전략 (Datasets & Utilization)
 
-- $$$$
-    
-    **Month 1 (1~4주차): 메인 파이프라인 MVP 구축**
-    
+본 프로젝트는 분석의 용이성과 실무 적용 가능성을 동시에 입증하기 위해, 점진적인 난이도를 가진 3개의 트랙(Track)으로 데이터셋을 구성하여 활용합니다.
+
+| 구분 | 데이터셋 | URL | 활용 목적 및 계획 |
+| --- | --- | --- | --- |
+| **Track 1 (기초/패턴)** | `CRUST-bench` | [Link](https://github.com/anirudhkhatry/CRUST-bench) | C-to-Rust 변환 연구를 위해 함수 단위로 정제된 소규모 벤치마크. 초기 통찰력 프롬프트 설계, `unsafe` 발생 원인 정밀 분석, 파이프라인 MVP 동작 및 에러 복구율 확인용으로 사용. |
+| **Track 2 (표준/I.O)** | `simcrat` | [Link](https://github.com/kaist-plrg/simcrat) | GNU Coreutils 등을 포함한 벤치마크. C 표준 라이브러리(libc) 및 파일 I/O API가 Rust 표준 라이브러리로 올바르게 매핑 및 변환되는지 중점적으로 평가. |
+| **Track 3 (심화/실무)** | `Syzygy_Zopfli` | [Link](https://github.com/syzygy-project/Syzygy_Zopfli) | 구글 압축 알고리즘 구현체. 복잡한 비트 연산과 포인터 산술 연산이 포함된 실무 레벨 코드로, 제안하는 엔진의 최종 일반화 성능 및 I/O 동등성을 증명하는 '최종 보스' 격으로 활용. |
+
+## 6. 단계별 개발 마일스톤 (3개월 / 약 12주 계획)
+
+- **Month 1 (1~4주차): 메인 파이프라인 MVP 구축**
     - C2Rust 설치 및 로컬 변환 환경 세팅
-    - $$Main Engine$$
-        
-        C 코드 로드 -> C2Rust 실행 -> LLM API 호출 -> 결과물 저장에 이르는 기본 파이썬 컨트롤러 스크립트 작성
-        
+    - [Main Engine] C 코드 로드 -> C2Rust 실행 -> LLM API 호출 -> 결과물 저장에 이르는 기본 파이썬 컨트롤러 스크립트 작성
     - 소규모 C 코드 대상 기초 변환 테스트 및 API 연동 안정성 확보
-- $$$$
-    
-    **Month 2 (5~8주차): 영문 Insight Prompting 및 피드백 루프 구현**
-    
+- **Month 2 (5~8주차): 영문 Insight Prompting 및 피드백 루프 구현**
     - CRUST-bench 데이터셋을 활용하여 `unsafe` 발생 주요 실패 패턴 수동 분석
     - 분석 결과를 바탕으로 최적화된 영문 Insight Prompt 작성 및 Prompt Generator 모듈 연동
     - 컴파일 에러 발생 시 로그를 파싱하여 LLM에 재요청하는 Auto-Repair (Feedback) Loop 통합
-- $$$$
-    
-    **Month 3 (9~12주차): 대규모 검증 및 최종 고도화**
-    
+- **Month 3 (9~12주차): 대규모 검증 및 최종 고도화**
     - 배치(Batch) 처리 스크립트 작성을 통한 대량의 파일 변환 자동화
     - Syzygy_Zopfli 등 실무 복잡도 코드 대상 일반화 성능 검증 (컴파일 성공률 및 `unsafe` 감소율 정량 평가)
     - 파이프라인 코드 리팩토링, 사용자 친화적 출력 포맷 적용 및 최종 결과보고서 작성
 
-## 6. 최종 배포 및 활용 계획 (Deployment Plan)
+## 7. 최종 배포 및 활용 계획 (Deployment Plan)
 
 - 본 프로젝트는 누구나 쉽게 C-to-Rust 변환 파이프라인을 사용할 수 있도록 **Docker 기반의 배포 환경**을 제공할 예정입니다.
     - **격리된 환경 제공:** 사용자는 로컬 환경에 C2Rust, Rust Toolchain, Python 등을 복잡하게 직접 설치할 필요가 없습니다.
@@ -160,15 +158,23 @@ C2Rust를 통해 1차 변환된 `unsafe` 코드를 입력받은 프롬프트 엔
 1. **Skeleton Extraction (뼈대 추출):** 파이썬 파서를 통해 C 코드에서 매크로, 전역 변수, 구조체, 함수 시그니처만 추출하여 '컴파일 가능한 Rust 뼈대(Global Context)'를 구축.
 2. **Function-level Translation:** 프롬프트 엔진에게 `[Global Context 뼈대] + [Target Function 1개]` 단위로 묶어 반복적으로 분할 변환을 지시.
 
-## 3.3. FFI 기반 End-to-End 정밀 검증 모듈
+## 3.3. 다각도 성능 및 동등성 검증 모듈 (Multi-dimensional Evaluation Module)
 
-> 💡 **적용 논문:** *SACTOR (FFI Verification)* & *SafeTrans (Vulnerability Mitigation)*
+> 💡 **대안적 핵심 전략:** 구현 및 연동이 복잡한 FFI 대신, 파이썬 자동화에 최적화된 '블랙박스 테스트'와 '정량/정성 지표 분석'을 결합하여 프롬프트 엔진의 성능을 4가지 차원에서 완벽하게 검증합니다.
 > 
 
-프롬프트 엔진이 만들어낸 코드가 문법적으로 컴파일되는 것을 넘어, '진짜 원본 C와 똑같이 동작하는지' 입증하는 하드코어 검증 환경입니다.
+프롬프트 엔진이 만들어낸 코드가 단순히 컴파일되는 것을 넘어, 실질적인 가치를 지니는지 다음의 핵심 지표들로 다각도 평가를 진행합니다.
 
-- **FFI 테스트 자동화:** 변환된 Rust 코드를 FFI를 통해 원본 C 테스트 스위트에 임베딩하여, 원본의 입력값에 대한 출력값이 100% 일치하는지(Semantic Equivalence) 교차 검증합니다.
-- **보안 취약점 완화 검증:** 원본 C 코드의 오버플로우 유발 입력을 주입했을 때, Rust 코드가 메모리 오염 없이 안전하게 패닉(Panic) 방어해 내는지 입증합니다.
+1. **기능적 동등성 검증 (Functional Equivalence):**
+    - **블랙박스 I/O 자동 테스트:** 원본 C 실행 파일과 변환된 Rust 실행 파일에 동일한 Test Case(CLI 인자, 표준 입력 `stdin` 등)를 주입합니다. 이후 두 프로그램의 **표준 출력(`stdout`), 에러 출력(`stderr`), 프로그램 종료 코드(Exit code)**가 100% 일치하는지 파이썬 `subprocess`로 자동 비교합니다. (가장 신뢰성 높고 구현이 명확한 End-to-End 기능 검증)
+    - *(참고: SACTOR 논문의 FFI 개념은 라이브러리 형태의 함수 단위 정밀 검증이 필수적인 경우에만 보조적으로 활용합니다.)*
+2. **안전성 지표 평가 (Safety Assessment):**
+    - **`unsafe` 코드 제거율:** C2Rust가 생성한 1차 코드 대비 프롬프트 엔진이 생성한 최종 Rust 코드에서 `unsafe` 블록 및 Raw Pointer(`mut T`)가 얼마나 감소했는지(목표: 100% 제거) 라인 단위로 측정합니다.
+    - **보안 취약점 완화 검증:** 원본 C 코드에서 버퍼 오버플로우나 Segfault를 유발하는 악의적인 입력값을 주입했을 때, Rust 코드가 메모리 오염 없이 안전하게 패닉(Panic)으로 방어해 내는지 입증합니다.
+3. **관용성 향상 평가 (Idiomaticity Evaluation):**
+    - 변환된 코드가 C 스타일의 포인터 산술 연산이나 단순 `while` 루프 대신, Rust 특유의 관용적 패턴(예: `Iterator`, `Result`/`Option` 에러 처리, 안전한 `Slice` 인덱싱 등)을 얼마나 올바르게 채택했는지 정성적(Code Review) 및 정량적으로 분석합니다.
+4. **컴파일 성공률 측정 (Compilation Success Rate):**
+    - 에러 피드백 루프(Auto-Repair)를 거친 후, 최종적으로 `cargo check` 및 `cargo build`를 에러나 경고(Warning) 없이 통과하는 비율을 측정하여 프롬프트 엔진의 안정성을 평가합니다.
 
 ## 3.4. 결과 시각화 대시보드 (UI / Frontend)
 
