@@ -1,5 +1,3 @@
-# 계획
-
 # Oxidizer: Human-Insight Guided C-to-Rust Transpiler
 
 > 인간 통찰력 기반 LLM 제어를 통한 C 코드의 관용적(Idiomatic) Rust 자동 변환 파이프라인
