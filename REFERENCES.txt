@@ -1,0 +1,21 @@
+
+Translating C To Rust: Lessons from a User Study
+
+EvoC2Rust: A Skeleton-guided Framework for Project-Level C-to-Rust Translation
+
+SafeTrans: LLM-assisted Transpilation from C to Rust
+
+Optimizing Type Migration for LLM-Based C-to-Rust
+Translation: A Data Flow Graph Approach
+
+LLM-DRIVEN MULTI-STEP TRANSLATION FROM C TO RUST
+USING STATIC ANALYSIS
+
+C2SAFERRUST: Transforming C Projects into
+Safer Rust with NeuroSymbolic Techniques
+
+Integrating Rules and Semantics for LLM-Based
+C-to-Rust Translation
+
+His2Trans: A Skeleton First Framework for Self Evolving C to
+Rust Translation with Historical Retrieval
