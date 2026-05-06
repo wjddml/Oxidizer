@@ -1,67 +1,53 @@
+# src/main.py
 import os
 import subprocess
 import shutil
 from pathlib import Path
+from prompt_gen import PromptManager
+from llm_client import request_safe_rust
 
-# 프로젝트 루트 디렉토리 설정
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 INPUT_DIR = PROJECT_ROOT / "data" / "inputs"
 OUTPUT_DIR = PROJECT_ROOT / "data" / "outputs"
 
 def check_dependencies():
-    """파이프라인 실행에 필요한 외부 도구(C2Rust)가 설치되어 있는지 확인합니다."""
     if shutil.which("c2rust") is None:
         print("❌ [Error] 'c2rust' 명령어를 찾을 수 없습니다.")
-        print("💡 터미널에서 'cargo install c2rust'를 실행하여 설치해주세요.")
         return False
     return True
 
 def run_c2rust(c_file_path: Path) -> Path:
-    """
-    [Step 1: 정적 변환]
-    C2Rust를 실행하여 C 코드를 Rust로 변환합니다.
-    """
+    """[Step 1] C2Rust를 안전하게 실행 (Input 폴더 오염 방지)"""
     print(f"\n🚀 [Step 1] C2Rust 정적 변환 시작: {c_file_path.name}")
-    
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     
-    command = ["c2rust", "transpile", str(c_file_path)]
+    # 💡 핵심: Input 폴더가 더러워지지 않게 C 파일을 Output 폴더로 복사해서 작업
+    temp_c_file = OUTPUT_DIR / c_file_path.name
+    shutil.copy2(c_file_path, temp_c_file)
+    
+    command = ["c2rust", "transpile", str(temp_c_file.name)]
     
     try:
-        result = subprocess.run(
+        subprocess.run(
             command, 
-            cwd=OUTPUT_DIR, 
-            capture_output=True, 
-            text=True, 
-            check=True
+            cwd=OUTPUT_DIR, # 작업 디렉토리를 Output으로 고정
+            capture_output=True, text=True, check=True
         )
         
-        # 기본적으로 OUTPUT_DIR에 생성되기를 기대함
-        generated_rs_name = c_file_path.with_suffix('.rs').name
-        generated_rs_path = OUTPUT_DIR / generated_rs_name
+        generated_rs_path = OUTPUT_DIR / temp_c_file.with_suffix('.rs').name
+        
+        # 작업이 끝나면 복사해둔 원본 C 파일 삭제 (찌꺼기 제거)
+        temp_c_file.unlink(missing_ok=True)
         
         if generated_rs_path.exists():
             print(f"✅ [Step 1] 변환 성공! -> {generated_rs_path}")
             return generated_rs_path
         else:
-            # 원본 C 파일이 있는 폴더(INPUT_DIR)에 생성되었는지 확인하는 Fallback 로직
-            fallback_path = c_file_path.with_suffix('.rs')
-            if fallback_path.exists():
-                print(f"💡 [알림] C2Rust가 원본 폴더에 파일을 생성했습니다. Output 폴더로 이동합니다.")
-                shutil.move(str(fallback_path), str(generated_rs_path))
-                print(f"✅ [Step 1] 변환 성공! -> {generated_rs_path}")
-                return generated_rs_path
-
-            # 파일이 아예 안 만들어진 경우 상세 로그 출력
-            print("❌ [Error] C2Rust 실행은 성공(코드 0)했으나 변환된 .rs 파일을 찾을 수 없습니다.")
-            print("\n" + "="*20 + " [C2Rust 상세 로그] " + "="*20)
-            print("[STDOUT]\n", result.stdout)
-            print("[STDERR]\n", result.stderr)
-            print("="*60)
+            print("❌ [Error] 변환된 .rs 파일을 찾을 수 없습니다.")
             return None
             
     except subprocess.CalledProcessError as e:
-        print("❌ [Error] C2Rust 변환 중 치명적 오류 발생:")
+        print("❌ [Error] C2Rust 변환 중 오류 발생:")
         print(e.stderr)
         return None
 
@@ -70,22 +56,32 @@ def main():
     print("🔥 Oxidizer Pipeline Engine 가동 준비")
     print("="*50)
     
-    if not check_dependencies():
-        return
+    if not check_dependencies(): return
 
-    # 테스트할 타겟 파일 설정
     target_c_file = INPUT_DIR / "test.c"
-    
     if not target_c_file.exists():
-        print(f"❌ [Error] 타겟 파일을 찾을 수 없습니다: {target_c_file}")
-        print("💡 data/inputs/ 폴더에 test.c 파일을 만들어주세요.")
+        print(f"❌ [Error] 타겟 파일이 없습니다: {target_c_file}")
         return
 
-    # 1단계: C2Rust 정적 변환
     base_rs_file = run_c2rust(target_c_file)
-    
-    if base_rs_file:
-        print("\n🎉 이번 주 목표 달성! C2Rust 파이프라인 연동 성공!")
+    if not base_rs_file: return
+
+    with open(base_rs_file, 'r', encoding='utf-8') as f:
+        c2rust_code = f.read()
+
+    print(f"\n🧠 [Step 2] 인간 통찰력(Human Insight) 프롬프트 조립 중...")
+    prompt_mgr = PromptManager()
+    system_prompt, user_prompt = prompt_mgr.build_translation_prompt(c2rust_code)
+
+    safe_rust_code = request_safe_rust(system_prompt, user_prompt)
+
+    if safe_rust_code:
+        final_rs_name = target_c_file.stem + "_safe.rs"
+        final_rs_path = OUTPUT_DIR / final_rs_name
+        with open(final_rs_path, 'w', encoding='utf-8') as f:
+            f.write(safe_rust_code)
+            
+        print(f"\n✅ [Step 3] 변환 완료! Safe Rust 코드가 저장되었습니다 -> {final_rs_path}")
 
 if __name__ == "__main__":
     main()
