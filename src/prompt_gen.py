@@ -1,44 +1,65 @@
 # src/prompt_gen.py
+import os
+import yaml
+from pathlib import Path
 
 class PromptManager:
     def __init__(self):
-        # 기본 변환 규칙(Policy)들을 딕셔너리로 관리
-        # 언제든지 외부에서 .add_policy()로 규칙을 추가할 수 있습니다.
-        self.policies = {
-            "semantic_lifting": "Replace raw pointers (*mut T, *const T) with safe Rust types like String, Vec<T>, or slices (&[T], &mut [T]).",
-            "borrow_checker": "If multiple mutable pointers cause aliasing issues, use the `.clone()` strategy or iterators to separate lifetimes.",
-            "zero_unsafe": "Remove ALL `unsafe` blocks. Do NOT use `libc` functions if safe Rust standard library equivalents exist."
-        }
+        # 프로젝트 루트 경로 찾기 (src/ 의 부모)
+        self.project_root = Path(__file__).resolve().parent.parent
+        self.prompts_dir = self.project_root / "prompts"
+        
+        self.template_path = self.prompts_dir / "system_template.txt"
+        self.rules_path = self.prompts_dir / "rules.yaml"
 
-    def add_policy(self, rule_name: str, description: str):
-        """새로운 프롬프트 정책을 유연하게 추가합니다."""
-        self.policies[rule_name] = description
+    def load_rules(self) -> str:
+        """YAML 파일에서 규칙을 읽어와서 하나의 문자열로 예쁘게 포맷팅합니다."""
+        if not self.rules_path.exists():
+            return "No specific rules provided."
 
-    def remove_policy(self, rule_name: str):
-        """기존 프롬프트 정책을 제거합니다."""
-        if rule_name in self.policies:
-            del self.policies[rule_name]
+        with open(self.rules_path, 'r', encoding='utf-8') as f:
+            data = yaml.safe_load(f)
+
+        if not data or 'rules' not in data:
+            return "No valid rules found in YAML."
+
+        formatted_rules = ""
+        for i, rule in enumerate(data['rules'], 1):
+            formatted_rules += f"{i}. [{rule['name']}]\n   - {rule['description']}\n"
+            if rule.get('few_shot'):
+                formatted_rules += f"   - Example:\n     {rule['few_shot'].strip()}\n"
+            formatted_rules += "\n"
+
+        return formatted_rules.strip()
+
+    def load_system_template(self) -> str:
+        """텍스트 템플릿 파일을 읽어옵니다."""
+        if not self.template_path.exists():
+            raise FileNotFoundError(f"Template file not found at {self.template_path}")
+            
+        with open(self.template_path, 'r', encoding='utf-8') as f:
+            return f.read()
 
     def build_translation_prompt(self, c2rust_code: str):
         """
         [Step 2: 통찰력 주입]
-        현재 등록된 정책들을 모아 시스템 지시문(System Instruction)과 사용자 메시지를 생성합니다.
+        템플릿과 YAML 규칙을 결합하여 최종 프롬프트를 생성합니다.
         """
-        # 딕셔너리에 있는 정책들을 예쁘게 번호 매겨서 문자열로 조립
-        policy_text = ""
-        for i, (name, desc) in enumerate(self.policies.items(), 1):
-            # ex) 1. Semantic Lifting: Replace raw pointers...
-            policy_text += f"{i}. {name.replace('_', ' ').title()}: {desc}\n"
+        # 1. 템플릿과 규칙 가져오기
+        template = self.load_system_template()
+        rules_text = self.load_rules()
 
-        # Gemini에게 부여할 역할과 가이드라인 (System Instruction)
-        system_instruction = f"""You are an expert Rust developer and a C-to-Rust transpiler.
-Your task is to refactor the provided C2Rust-generated code into idiomatic, Safe Rust.
+        # 2. 템플릿의 {dynamic_rules} 구멍에 규칙 문자열 꽂아 넣기
+        system_instruction = template.format(dynamic_rules=rules_text)
 
-[Human Insight Guidelines]
-{policy_text}
-Return ONLY the complete, compilable Rust code. Do not include markdown blocks like ```rust or any explanations.
-"""
-        # 실제 변환할 대상 코드
-        user_prompt = f"Here is the C2Rust generated code:\n\n{c2rust_code}"
+        # 3. LLM에게 보낼 User Prompt 구성
+        user_prompt = f"Here is the code to translate:\n\n```rust\n{c2rust_code}\n```"
 
         return system_instruction, user_prompt
+
+# (선택) 단독 실행 테스트용
+if __name__ == "__main__":
+    pm = PromptManager()
+    sys_prompt, user_prompt = pm.build_translation_prompt("// dummy code")
+    print("=== [Generated System Instruction] ===\n")
+    print(sys_prompt)
