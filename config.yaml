@@ -1,0 +1,15 @@
+# config.yaml
+project:
+  name: "Oxidizer"
+
+paths:
+  prompts_dir: "prompts"
+  data_dir: "data"
+
+llm:
+  provider: "gemini"         # 향후 gpt, claude 등으로 변경 가능
+  model: "gemini-2.5-pro"
+  temperature: 0.2           # 기존 설정값 유지
+
+agent:
+  max_retries: 5             # 추후 피드백 루프에서 사용할 재시도 횟수

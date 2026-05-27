@@ -1,10 +1,11 @@
 # src/main.py
-import os
 import subprocess
 import shutil
 from pathlib import Path
-from prompt_gen import PromptManager
-from llm_client import request_safe_rust
+
+# 💡 새롭게 재구조화된 모듈들 import
+from prompter.prompt_builder import PromptBuilder
+from llm.llm_factory import create_llm_client
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 INPUT_DIR = PROJECT_ROOT / "data" / "inputs"
@@ -17,11 +18,10 @@ def check_dependencies():
     return True
 
 def run_c2rust(c_file_path: Path) -> Path:
-    """[Step 1] C2Rust를 안전하게 실행 (Input 폴더 오염 방지)"""
+    """[Step 1] C2Rust를 안전하게 실행"""
     print(f"\n🚀 [Step 1] C2Rust 정적 변환 시작: {c_file_path.name}")
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     
-    # 💡 핵심: Input 폴더가 더러워지지 않게 C 파일을 Output 폴더로 복사해서 작업
     temp_c_file = OUTPUT_DIR / c_file_path.name
     shutil.copy2(c_file_path, temp_c_file)
     
@@ -30,13 +30,10 @@ def run_c2rust(c_file_path: Path) -> Path:
     try:
         subprocess.run(
             command, 
-            cwd=OUTPUT_DIR, # 작업 디렉토리를 Output으로 고정
+            cwd=OUTPUT_DIR,
             capture_output=True, text=True, check=True
         )
-        
         generated_rs_path = OUTPUT_DIR / temp_c_file.with_suffix('.rs').name
-        
-        # 작업이 끝나면 복사해둔 원본 C 파일 삭제 (찌꺼기 제거)
         temp_c_file.unlink(missing_ok=True)
         
         if generated_rs_path.exists():
@@ -70,10 +67,14 @@ def main():
         c2rust_code = f.read()
 
     print(f"\n🧠 [Step 2] 인간 통찰력(Human Insight) 프롬프트 조립 중...")
-    prompt_mgr = PromptManager()
-    system_prompt, user_prompt = prompt_mgr.build_translation_prompt(c2rust_code)
+    # 💡 새로운 PromptBuilder 사용
+    prompt_builder = PromptBuilder()
+    messages = prompt_builder.build_messages(c2rust_code)
 
-    safe_rust_code = request_safe_rust(system_prompt, user_prompt)
+    print("🤖 [Step 3] LLM에게 관용적(Idiomatic) Safe Rust 변환을 요청하는 중...")
+    # 💡 새로운 LLM 팩토리 사용
+    llm_client = create_llm_client()
+    safe_rust_code = llm_client.generate(messages)
 
     if safe_rust_code:
         final_rs_name = target_c_file.stem + "_safe.rs"

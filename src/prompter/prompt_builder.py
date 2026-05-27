@@ -1,23 +1,19 @@
-# src/prompt_gen.py
-import os
 import yaml
-import re
 from pathlib import Path
 
 class CodeScanner:
-    """C2Rust 코드를 스캔하여 어떤 문법(키워드)이 사용되었는지 분석합니다."""
+    """C2Rust 코드를 스캔하여 특정 문법(키워드) 사용 여부를 분석합니다."""
     @staticmethod
     def scan(code: str) -> set:
         found_triggers = set()
-        # 검색할 기본 키워드들 (정적 분석의 기초)
-        keywords = ["malloc", "free", ".offset(", "static mut", "*mut", "libc::"]
+        keywords = ["malloc", "free", ".offset(", "static mut", "*mut", "libc::", "union "]
         for kw in keywords:
             if kw in code:
                 found_triggers.add(kw)
         return found_triggers
 
 class RuleEngine:
-    """여러 YAML 파일에서 규칙을 로드하고, 스캔 결과에 맞춰 필터링합니다."""
+    """YAML 파일들에서 규칙을 로드하고 스캔 결과에 맞춰 필터링합니다."""
     def __init__(self, rules_dir: Path):
         self.rules_dir = rules_dir
 
@@ -28,7 +24,6 @@ class RuleEngine:
         if not self.rules_dir.exists():
             return "No rules directory found."
 
-        # rules/ 폴더 안의 모든 yaml 파일을 순회
         for yaml_file in self.rules_dir.glob("*.yaml"):
             with open(yaml_file, 'r', encoding='utf-8') as f:
                 data = yaml.safe_load(f)
@@ -36,7 +31,6 @@ class RuleEngine:
                     continue
 
                 for rule in data['rules']:
-                    # Trigger가 없거나, 코드에서 발견된 트리거와 하나라도 겹치면 규칙 활성화
                     triggers = rule.get('trigger', [])
                     if not triggers or any(t in code_triggers for t in triggers):
                         formatted_rule = f"{rule_counter}. [{rule['name']}]\n   - {rule['description']}"
@@ -50,53 +44,46 @@ class RuleEngine:
         
         return "\n\n".join(active_rules)
 
-class PromptManager:
-    """스캐너와 룰 엔진을 결합하여 최종 프롬프트를 생성하는 마스터 클래스입니다."""
-    def __init__(self):
-        self.project_root = Path(__file__).resolve().parent.parent
-        self.prompts_dir = self.project_root / "prompts"
+class PromptBuilder:
+    """스캐너와 룰 엔진을 결합하여 LLM용 메시지 배열을 생성합니다."""
+    def __init__(self, config_path: str = "config.yaml"):
+        # config.yaml 읽기
+        with open(config_path, "r", encoding="utf-8") as f:
+            self.config = yaml.safe_load(f)
+            
+        # 경로 동적 설정
+        project_root = Path(__file__).resolve().parent.parent.parent
+        prompts_dir_name = self.config.get("paths", {}).get("prompts_dir", "prompts")
+        self.prompts_dir = project_root / prompts_dir_name
         
-        self.template_path = self.prompts_dir / "system_template.txt"
+        # 템플릿과 규칙 경로 매핑
+        self.template_path = self.prompts_dir / "templates" / "system_template.txt"
         self.rules_dir = self.prompts_dir / "rules"
         
         self.scanner = CodeScanner()
         self.rule_engine = RuleEngine(self.rules_dir)
 
-    def load_system_template(self) -> str:
-        if not self.template_path.exists():
-            raise FileNotFoundError(f"Template not found: {self.template_path}")
-        with open(self.template_path, 'r', encoding='utf-8') as f:
-            return f.read()
-
-    def build_translation_prompt(self, c2rust_code: str):
-        # 1. 정적 분석: 코드 스캔
+    def build_messages(self, c2rust_code: str) -> list[dict]:
+        """
+        코드를 분석하여 LLM 클라이언트가 요구하는 messages 리스트를 반환합니다.
+        """
         detected_triggers = self.scanner.scan(c2rust_code)
-        
-        # 2. 규칙 필터링: 상황에 맞는 규칙만 조립
         active_rules_text = self.rule_engine.get_active_rules(detected_triggers)
         
-        # 3. 템플릿 로드 및 [CONTEXT] 주입 (현재는 빈칸, 미래를 위한 대비)
-        template = self.load_system_template()
-        static_context = "No additional global context provided for this chunk."
-        
-        # 4. 최종 System Instruction 조립
+        if not self.template_path.exists():
+            raise FileNotFoundError(f"❌ [Error] 템플릿 파일이 없습니다: {self.template_path}")
+            
+        with open(self.template_path, 'r', encoding='utf-8') as f:
+            template = f.read()
+            
         system_instruction = template.format(
-            static_context=static_context,
+            static_context="No additional global context provided for this chunk.",
             dynamic_rules=active_rules_text
         )
 
-        # 5. User Prompt 조립
         user_prompt = f"Here is the C2Rust generated code to translate:\n\n```rust\n{c2rust_code}\n```"
 
-        return system_instruction, user_prompt
-
-# 단독 실행 테스트용
-if __name__ == "__main__":
-    pm = PromptManager()
-    dummy_code = "let p: *mut libc::c_char = libc::malloc(10); p.offset(1);"
-    sys_prompt, user_prompt = pm.build_translation_prompt(dummy_code)
-    
-    print("=== [Code Scanning Result] ===")
-    print(pm.scanner.scan(dummy_code))
-    print("\n=== [Generated System Instruction] ===\n")
-    print(sys_prompt)
+        return [
+            {"role": "system", "content": system_instruction},
+            {"role": "user", "content": user_prompt}
+        ]
