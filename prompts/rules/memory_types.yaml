@@ -1,0 +1,12 @@
+rules:
+  - name: "Semantic Type Lifting"
+    trigger: ["*mut libc::c_char", "*mut u8", "*const", "malloc", "calloc"]
+    description: "Do NOT retain raw pointers (`*mut T`, `*const T`). Lift them semantically: Use `String` or `&str` for C strings. Use `Vec<T>` for dynamically allocated buffers. Use `&mut [T]` for array parameters."
+  
+  - name: "Explicit Type Casting"
+    trigger: ["as libc::", "as i32", "as usize"]
+    description: "Rust does not support implicit type casting. Convert C's implicit casts to strict, explicit Rust casting using the `as` keyword for primitives, or `.try_into().unwrap()` for safe integer conversions."
+
+  - name: "Nullable References (Option<T>)"
+    trigger: [".is_null(", "== 0 as *mut"]
+    description: "If a pointer can logically be NULL, translate it into `Option<T>` (e.g., `Option<&mut T>` or `Option<String>`). Use `match` or `if let` to unwrap it instead of raw pointer null checks."

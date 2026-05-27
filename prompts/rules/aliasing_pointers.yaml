@@ -1,0 +1,12 @@
+rules:
+  - name: "Zero-Cost AXM Resolution (Elision & Cloning)"
+    trigger: ["*mut", "&mut", "borrow"]
+    description: "When resolving Aliasing XOR Mutability (AXM) violations, DO NOT use dynamic references like `Rc<RefCell<T>>` unless strictly necessary. Prioritize static safety: 1. Elision (remove redundant pointers). 2. Cloning (use `.clone()` to separate read/write access to the same object)."
+
+  - name: "Prohibit Pointer Arithmetic"
+    trigger: [".offset(", "wrapping_add", "wrapping_sub"]
+    description: "Pointer arithmetic is strictly forbidden. Replace `.offset()` or index-based pointer manipulation with safe Rust slice indexing (`arr[i]`), standard iterators (`.iter()`, `.iter_mut()`), or `.chunks()`."
+
+  - name: "Safe Dereferencing"
+    trigger: ["*ptr"]
+    description: "Do not blindly dereference raw pointers. If accessing an array, use safe bounds-checked indexing or iterators. If it's a single value, ensure ownership or safe borrowing is established first."

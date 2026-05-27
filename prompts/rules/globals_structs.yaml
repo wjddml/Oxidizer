@@ -1,0 +1,12 @@
+rules:
+  - name: "Local Object Grouping for Mutable Globals"
+    trigger: ["static mut"]
+    description: "Eliminate `static mut` globals. Refactor them into a localized `struct` (e.g., `GlobalState`), initialize it locally in the appropriate scope, and pass it explicitly as a `&mut GlobalState` reference to the functions that need it."
+
+  - name: "Safe C Union Translation"
+    trigger: ["union "]
+    description: "Never use `union` in Safe Rust. Determine the use case: 1. If used for type punning (interpreting raw bytes), replace with zero-cost conversion APIs like `to_le_bytes()`. 2. If used as a variant record, translate to a Rust `enum`."
+
+  - name: "Self-Referential Struct Mitigation"
+    trigger: ["struct "]
+    description: "If a structure contains pointers to its own elements or entangled lifetimes, decompose it. Replace inner pointers with safe indices (e.g., `usize` array offsets) to satisfy the Borrow Checker."

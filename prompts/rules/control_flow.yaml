@@ -1,0 +1,8 @@
+rules:
+  - name: "Idiomatic Loop Translation"
+    trigger: ["while ", "loop {"]
+    description: "Replace manual index-incrementing `while` loops with Rust's `for ... in ...` ranges (e.g., `0..len`) or `.enumerate()`. Remove `do-while` loops in favor of `loop` with an explicit `break` condition."
+
+  - name: "Switch to Match"
+    trigger: ["switch", "match "]
+    description: "Ensure C `switch` statements are translated into exhaustive Rust `match` expressions. Use the `_ => {}` arm to handle default/fallback cases safely."

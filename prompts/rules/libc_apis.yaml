@@ -1,0 +1,8 @@
+rules:
+  - name: "Expression Expansion for libc APIs"
+    trigger: ["libc::", "fopen", "sscanf", "printf", "sprintf"]
+    description: "Do NOT map C standard library functions to 1:1 Rust FFI calls. Expand them into multi-step, idiomatic Rust expressions using `std::fs`, `std::io`, or `std::fmt`. For example, translate `fopen(file, \"w+\")` to `File::options().read(true).write(true).create(true).open(file)`."
+
+  - name: "String Manipulation Emulation"
+    trigger: ["strcmp", "strcpy", "strlen", "memset"]
+    description: "Replace C string manipulation functions with native Rust String/slice methods. Use `==` for `strcmp`, `.clone()` or `.copy_from_slice()` for `strcpy`, `.len()` for `strlen`, and `.fill()` for `memset`."
