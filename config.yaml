@@ -12,4 +12,6 @@ llm:
   temperature: 0.2           # 기존 설정값 유지
 
 agent:
-  max_retries: 5             # 추후 피드백 루프에서 사용할 재시도 횟수
+  max_retries: 5             # 구문(Syntax) 및 의미(Semantic) 수리 최대 재시도 횟수
+  timeout_seconds: 60        # Cargo 빌드/체크 타임아웃
+  memory_limit_mb: 1024      # 테스트/빌드 메모리 제한 (OOM 방지)
