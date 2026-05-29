@@ -1,89 +1,72 @@
+# src/prompter/prompt_builder.py
 import yaml
 from pathlib import Path
-
-class CodeScanner:
-    """C2Rust 코드를 스캔하여 특정 문법(키워드) 사용 여부를 분석합니다."""
-    @staticmethod
-    def scan(code: str) -> set:
-        found_triggers = set()
-        keywords = ["malloc", "free", ".offset(", "static mut", "*mut", "libc::", "union "]
-        for kw in keywords:
-            if kw in code:
-                found_triggers.add(kw)
-        return found_triggers
-
-class RuleEngine:
-    """YAML 파일들에서 규칙을 로드하고 스캔 결과에 맞춰 필터링합니다."""
-    def __init__(self, rules_dir: Path):
-        self.rules_dir = rules_dir
-
-    def get_active_rules(self, code_triggers: set) -> str:
-        active_rules = []
-        rule_counter = 1
-
-        if not self.rules_dir.exists():
-            return "No rules directory found."
-
-        for yaml_file in self.rules_dir.glob("*.yaml"):
-            with open(yaml_file, 'r', encoding='utf-8') as f:
-                data = yaml.safe_load(f)
-                if not data or 'rules' not in data:
-                    continue
-
-                for rule in data['rules']:
-                    triggers = rule.get('trigger', [])
-                    if not triggers or any(t in code_triggers for t in triggers):
-                        formatted_rule = f"{rule_counter}. [{rule['name']}]\n   - {rule['description']}"
-                        if rule.get('few_shot'):
-                            formatted_rule += f"\n   - Example:\n     {rule['few_shot'].strip()}"
-                        active_rules.append(formatted_rule)
-                        rule_counter += 1
-
-        if not active_rules:
-            return "General idiomatic safe Rust translation required."
-        
-        return "\n\n".join(active_rules)
+from typing import List, Dict
 
 class PromptBuilder:
-    """스캐너와 룰 엔진을 결합하여 LLM용 메시지 배열을 생성합니다."""
+    """
+    시스템 템플릿(system_template.txt)을 로드하고,
+    정적 분석 결과(static_context)와 RAG 검색 규칙(dynamic_rules)을 매핑하여
+    최종 LLM 프롬프트를 조립합니다.
+    """
     def __init__(self, config_path: str = "config.yaml"):
-        # config.yaml 읽기
         with open(config_path, "r", encoding="utf-8") as f:
             self.config = yaml.safe_load(f)
             
-        # 경로 동적 설정
         project_root = Path(__file__).resolve().parent.parent.parent
-        prompts_dir_name = self.config.get("paths", {}).get("prompts_dir", "prompts")
-        self.prompts_dir = project_root / prompts_dir_name
+        prompts_dir = project_root / self.config.get("paths", {}).get("prompts_dir", "prompts")
         
-        # 템플릿과 규칙 경로 매핑
-        self.template_path = self.prompts_dir / "templates" / "system_template.txt"
-        self.rules_dir = self.prompts_dir / "rules"
-        
-        self.scanner = CodeScanner()
-        self.rule_engine = RuleEngine(self.rules_dir)
+        # 마스터가 작성한 시스템 템플릿 로드
+        template_path = prompts_dir / "templates" / "system_template.txt"
+        if template_path.exists():
+            with open(template_path, "r", encoding="utf-8") as f:
+                self.system_template = f.read()
+        else:
+            raise FileNotFoundError(f"시스템 템플릿을 찾을 수 없습니다: {template_path}")
 
-    def build_messages(self, c2rust_code: str) -> list[dict]:
+    def build_master_prompt(
+        self, 
+        c_code: str, 
+        c2rust_code: str, 
+        c_fingerprint_str: str, 
+        mir_liveness_str: str, 
+        rag_rules_str: str
+    ) -> List[Dict[str, str]]:
         """
-        코드를 분석하여 LLM 클라이언트가 요구하는 messages 리스트를 반환합니다.
+        모든 분석 데이터를 템플릿에 주입하고, LLM용 메시지 배열을 생성합니다.
         """
-        detected_triggers = self.scanner.scan(c2rust_code)
-        active_rules_text = self.rule_engine.get_active_rules(detected_triggers)
         
-        if not self.template_path.exists():
-            raise FileNotFoundError(f"❌ [Error] 템플릿 파일이 없습니다: {self.template_path}")
+        # 1. {static_context} 영역 조립 (C DFG 지문 + Rust MIR 생존 변수)
+        static_context_parts = []
+        if c_fingerprint_str:
+            static_context_parts.append(c_fingerprint_str)
+        if mir_liveness_str:
+            static_context_parts.append(mir_liveness_str)
+        
+        static_context_combined = "\n\n".join(static_context_parts)
+        if not static_context_combined:
+            static_context_combined = "// No specific static analysis data triggered for this chunk."
             
-        with open(self.template_path, 'r', encoding='utf-8') as f:
-            template = f.read()
-            
-        system_instruction = template.format(
-            static_context="No additional global context provided for this chunk.",
-            dynamic_rules=active_rules_text
+        # 2. 시스템 프롬프트 포맷팅 (템플릿의 플레이스홀더 치환)
+        system_content = self.system_template.format(
+            static_context=static_context_combined,
+            dynamic_rules=rag_rules_str
         )
 
-        user_prompt = f"Here is the C2Rust generated code to translate:\n\n```rust\n{c2rust_code}\n```"
-
+        # 3. 유저 프롬프트 구성 (원본 C 및 C2Rust 참고 코드 제공)
+        user_content = (
+            "### Original C Code:\n"
+            "```c\n"
+            f"{c_code}\n"
+            "```\n\n"
+            "### C2Rust Unsafe Code (Reference):\n"
+            "```rust\n"
+            f"{c2rust_code}\n"
+            "```\n\n"
+            "Please execute your `// PLAN:` and generate the idiomatic Safe Rust translation following the tags (<FUNC>, <IMPORTS>) specified in the system instructions."
+        )
+        
         return [
-            {"role": "system", "content": system_instruction},
-            {"role": "user", "content": user_prompt}
+            {"role": "system", "content": system_content},
+            {"role": "user", "content": user_content}
         ]
