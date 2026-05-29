@@ -95,39 +95,52 @@ class Orchestrator:
             
         return injected_code
 
-    def run_pipeline(self, c_file: Path) -> bool:
-        """Oxidizer 하이브리드 파이프라인 전체 가동"""
+    def run_pipeline(self, c_file: Path, input_data: str = None, expected_output: str = None, options: dict = None) -> bool:
+        """Oxidizer 하이브리드 파이프라인 전체 가동 (모듈 선택형)"""
+        if options is None:
+            options = {"use_skeleton": True, "use_dfg": True, "use_mir": True, "use_rag": True, "use_repair": True}
+
         print("="*60)
         print(f"🔥 Oxidizer 파이프라인 가동: {c_file.name}")
+        print(f"⚙️ 활성 모듈: {', '.join([k.replace('use_', '') for k, v in options.items() if v])}")
         print("="*60)
         
         with open(c_file, "r", encoding="utf-8") as f:
             c_code = f.read()
             
         # [Phase 1] Safe Rust 스켈레톤(뼈대) 생성
-        rust_skeleton_code = self.skeleton_gen.generate_rust_skeleton(c_file, c_code)
+        rust_skeleton_code = ""
+        if options["use_skeleton"]:
+            rust_skeleton_code = self.skeleton_gen.generate_rust_skeleton(c_file, c_code)
         
-        # [Phase 2] 정적 분석 (C DFG 지문 추출)
-        c_fingerprint = self.c_extractor.extract_semantic_fingerprint(c_file, "main")
-        c_fingerprint_str = self.c_extractor.format_for_prompt(c_fingerprint)
+        # [Phase 2 - A] 정적 분석 (C DFG 지문 추출)
+        c_fingerprint = {}
+        c_fingerprint_str = ""
+        if options["use_dfg"]:
+            c_fingerprint = self.c_extractor.extract_semantic_fingerprint(c_file, "main")
+            c_fingerprint_str = self.c_extractor.format_for_prompt(c_fingerprint)
         
-        # [Phase 2] 컴파일러 분석 (Rust MIR Slicer)
-        c2rust_rs_path = self._run_c2rust(c_file)
+        # [Phase 2 - B] 컴파일러 분석 (Rust MIR Slicer)
         mir_liveness_str = ""
         c2rust_code = ""
-        if c2rust_rs_path:
-            c2rust_code = self.workspace.read_code(c2rust_rs_path)
-            project_dir = c2rust_rs_path.parent.parent
-            mir_data = self.mir_analyzer.run_slicer(project_dir)
-            func_mir = self.mir_analyzer.extract_liveness_context(mir_data, "main")
-            mir_liveness_str = self.mir_analyzer.format_mir_feedback_for_llm(func_mir)
+        if options["use_mir"]:
+            c2rust_rs_path = self._run_c2rust(c_file)
+            if c2rust_rs_path:
+                c2rust_code = self.workspace.read_code(c2rust_rs_path)
+                project_dir = c2rust_rs_path.parent.parent
+                mir_data = self.mir_analyzer.run_slicer(project_dir)
+                func_mir = self.mir_analyzer.extract_liveness_context(mir_data, "main")
+                mir_liveness_str = self.mir_analyzer.format_mir_feedback_for_llm(func_mir)
             
         # [Phase 3] RAG 처방전 검색
-        retrieved_rules = self.rag_retriever.retrieve_rules(c_fingerprint)
-        rag_rules_str = self.rag_retriever.format_for_prompt(retrieved_rules)
+        rag_rules_str = ""
+        if options["use_rag"]:
+            # DFG 지문이 없으면 빈 딕셔너리가 전달되어 빈 결과 반환됨
+            retrieved_rules = self.rag_retriever.retrieve_rules(c_fingerprint)
+            rag_rules_str = self.rag_retriever.format_for_prompt(retrieved_rules)
         
         # [Phase 4] 프롬프트 조립 및 생성 요청
-        print("\n🧠 [Phase 4] LLM에게 '의미 복원(Semantic Reconstruction)' 및 변환 요청 중...")
+        print("\n🧠 [Phase 4] LLM에게 변환 요청 중...")
         master_messages = self.prompt_builder.build_master_prompt(
             c_code=c_code,
             c2rust_code=c2rust_code,
@@ -143,19 +156,27 @@ class Orchestrator:
         if plan:
             print(f"\n💡 [LLM Reasoning PLAN]\n{plan}\n")
             
-        # 스켈레톤에 이식 (Injection)
-        final_code = self._inject_into_skeleton(rust_skeleton_code, imports, func_body)
+        # 스켈레톤 사용 여부에 따른 최종 코드 이식
+        if options["use_skeleton"] and rust_skeleton_code:
+            final_code = self._inject_into_skeleton(rust_skeleton_code, imports, func_body)
+        else:
+            # 스켈레톤이 꺼져 있다면, LLM이 생성한 코드를 그대로 사용
+            final_code = f"{imports}\n\n{func_body}" if func_body else self.repair_agent._extract_rust_code(llm_response)
         
         final_rs_path = self.output_dir / c_file.with_suffix('.rs').name
         self.workspace.write_code(final_rs_path, final_code)
         
-        # 사후 컴파일 복구 루프 (Syntax Repair Loop)
-        project_name = c_file.stem
-        target_rs_path = self.repair_agent.run(final_rs_path, project_name, is_bin=True)
-        
-        if not target_rs_path:
-            print("\n❌ 파이프라인 완료 실패: 컴파일 수리 불가능")
-            return False
+        # [Phase 5] 사후 컴파일 복구 루프 (Syntax Repair Loop)
+        if options["use_repair"]:
+            project_name = c_file.stem
+            target_rs_path = self.repair_agent.run(final_rs_path, project_name, is_bin=True)
             
-        print(f"\n✅ 파이프라인 성공! 결과물: {target_rs_path}")
+            if not target_rs_path:
+                print("\n❌ 파이프라인 완료 실패: 컴파일 수리 불가능")
+                return False
+                
+            print(f"\n✅ 파이프라인 성공! 결과물: {target_rs_path}")
+        else:
+            print(f"\n✅ 수리 과정 패스 (Repair Disabled). 결과물: {final_rs_path}")
+
         return True
