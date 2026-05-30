@@ -11,7 +11,6 @@ certifi==2026.2.25
 cffi==2.0.0
 charset-normalizer==3.4.7
 chromadb==1.5.9
-clang==21.1.7
 click==8.4.1
 cryptography==48.0.0
 cuda-bindings==13.3.0
@@ -48,6 +47,7 @@ joblib==1.5.3
 jsonschema==4.26.0
 jsonschema-specifications==2025.9.1
 kubernetes==36.0.1
+libclang==18.1.1
 markdown-it-py==4.2.0
 MarkupSafe==3.0.3
 mdurl==0.1.2

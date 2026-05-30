@@ -1,7 +1,43 @@
 # src/analyzer/c_semantic_extractor.py
 import clang.cindex
+import os
+from ctypes.util import find_library
 from pathlib import Path
 from typing import Dict, List, Any
+
+# --- libclang 동적 경로 탐색 및 자동 연결 로직 ---
+def _setup_libclang():
+    if clang.cindex.Config.library_file or clang.cindex.Config.library_path:
+        return
+        
+    # 1차 시도: OS의 기본 동적 라이브러리 탐색
+    lib_name = find_library('clang')
+    if lib_name:
+        try:
+            clang.cindex.Config.set_library_file(lib_name)
+            return
+        except clang.cindex.LibclangError:
+            pass
+            
+    # 2차 시도: 우분투/데비안 계열의 일반적인 설치 경로 순회
+    common_paths = [
+        '/usr/lib/x86_64-linux-gnu/libclang.so',
+        '/usr/lib/x86_64-linux-gnu/libclang.so.1',
+        '/usr/lib/llvm-19/lib/libclang.so.1',
+        '/usr/lib/llvm-18/lib/libclang.so.1',
+        '/usr/lib/llvm-17/lib/libclang.so.1',
+        '/usr/lib/llvm-16/lib/libclang.so.1',
+        '/usr/lib/llvm-15/lib/libclang.so.1',
+        '/usr/lib/llvm-14/lib/libclang.so.1',
+    ]
+    
+    for path in common_paths:
+        if os.path.exists(path):
+            clang.cindex.Config.set_library_file(path)
+            return
+
+_setup_libclang()
+# ---------------------------------------------------
 
 class CSemanticExtractor:
     """
@@ -9,8 +45,7 @@ class CSemanticExtractor:
     RAG 검색을 위한 '의미론적 지문(Semantic Fingerprint)'을 생성합니다.
     """
     def __init__(self):
-        # 시스템 환경에 맞게 libclang 경로 설정 (필요시 수정)
-        # clang.cindex.Config.set_library_file('/usr/lib/llvm-19/lib/libclang.so.1')
+        # 자동 탐색된 경로를 바탕으로 Index 생성
         self.index = clang.cindex.Index.create()
 
     def _parse_file(self, file_path: Path) -> clang.cindex.TranslationUnit:

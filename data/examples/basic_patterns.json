@@ -1,0 +1,10 @@
+[
+  {
+    "intent": "Array traversal using pointer arithmetic (p++) and dereferencing (*p).",
+    "code": "// [C Code]\n// for(int* p = arr; p < arr + len; p++) { do_something(*p); }\n\n// [Safe Rust Idiom]\nfor val in arr.iter() {\n    do_something(*val);\n}"
+  },
+  {
+    "intent": "Dynamic memory allocation and zero-initialization using malloc and memset.",
+    "code": "// [C Code]\n// int* buf = (int*)malloc(size * sizeof(int));\n// memset(buf, 0, size * sizeof(int));\n\n// [Safe Rust Idiom]\nlet mut buf = vec![0; size];"
+  }
+]

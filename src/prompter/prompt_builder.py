@@ -8,6 +8,7 @@ class PromptBuilder:
     1. 5개의 인간 변환 규칙(YAML)을 로드하고 코드 내 트리거(Trigger)와 매칭합니다.
     2. 시스템 템플릿(system_template.txt)을 로드합니다.
     3. 정적 분석 지문, 매칭된 규칙, RAG 예시 코드를 융합하여 마스터 프롬프트를 조립합니다.
+    4. 출력을 '구조화된 마크다운(Structured Markdown)' 포맷으로 강제합니다.
     """
     def __init__(self, config_path: str = "config.yaml"):
         with open(config_path, "r", encoding="utf-8") as f:
@@ -60,18 +61,18 @@ class PromptBuilder:
         c_code: str, 
         c2rust_code: str, 
         c_fingerprint_str: str, 
-        rag_examples_str: str
+        rag_examples_str: str,
+        skeleton_code: str = ""  # 추가된 뼈대 파라미터
     ) -> List[Dict[str, str]]:
         """
         모든 분석 데이터와 예시 코드를 템플릿에 주입하고, LLM용 메시지 배열을 생성합니다.
-        (참고: mir_liveness_str 인자는 파이프라인에서 제거되었습니다.)
         """
         
-        # 1. 5대 규칙 트리거 매칭 (C 원본과 C2Rust 코드를 모두 스캔)
+        # 1. 5대 규칙 트리거 매칭
         combined_code = f"{c_code}\n{c2rust_code}"
         dynamic_rules_str = self._match_rules(combined_code)
 
-        # 2. {static_context} 영역 조립 (C DFG 지문 + RAG에서 가져온 예시 코드)
+        # 2. {static_context} 영역 조립
         static_context_parts = []
         if c_fingerprint_str:
             static_context_parts.append("### Static Analysis (C DFG Fingerprints)\n" + c_fingerprint_str)
@@ -82,24 +83,49 @@ class PromptBuilder:
         if not static_context_combined:
             static_context_combined = "// No specific static analysis or examples found."
             
-        # 3. 시스템 프롬프트 포맷팅 (.replace()를 사용하여 중괄호 충돌 방지)
-        system_content = self.system_template.replace(
+        # 3. 템플릿에서 기존의 <FUNC> 출력 지시문 잘라내기 (충돌 방지)
+        template_core = self.system_template
+        if "[OUTPUT FORMAT INSTRUCTIONS" in template_core:
+            template_core = template_core.split("[OUTPUT FORMAT INSTRUCTIONS")[0].strip()
+
+        # 4. 구조화된 마크다운 강제 지시문 생성
+        markdown_instruction = """
+[CRITICAL OUTPUT FORMAT]
+You MUST strictly follow this markdown structure. Do not deviate.
+
+### 1. TRANSLATION PLAN
+Write a brief, step-by-step reasoning for your translation strategy.
+
+### 2. SAFE RUST CODE
+Provide the ENTIRE, completely translated Safe Rust source code inside a single ```rust ... ``` block.
+Do not omit any part of the code. Do not output multiple code blocks.
+"""
+
+        # 5. 시스템 프롬프트 포맷팅
+        system_content = template_core.replace(
             "{static_context}", static_context_combined
         ).replace(
             "{dynamic_rules}", dynamic_rules_str
         )
+        system_content = f"{system_content}\n\n{markdown_instruction}"
 
-        # 4. 유저 프롬프트 구성 (원본 C 및 C2Rust 참고 코드 제공)
+        # 6. 유저 프롬프트 구성 (뼈대를 Context로 주입)
         user_content = (
             "### Original C Code:\n"
-            "```c\n"
-            f"{c_code}\n"
-            "```\n\n"
+            f"```c\n{c_code}\n```\n\n"
+        )
+        
+        if skeleton_code:
+            user_content += (
+                "### Rust Skeleton (Context Reference Only):\n"
+                f"```rust\n{skeleton_code}\n```\n\n"
+            )
+            
+        user_content += (
             "### C2Rust Unsafe Code (Reference):\n"
-            "```rust\n"
-            f"{c2rust_code}\n"
-            "```\n\n"
-            "Please execute your `// PLAN:` and generate the idiomatic Safe Rust translation following the tags (<FUNC>, <IMPORTS>) specified in the system instructions."
+            f"```rust\n{c2rust_code}\n```\n\n"
+            "Please analyze the C code and provide the safe Rust translation. "
+            "Remember to respond ONLY with the strict markdown structure requested."
         )
         
         return [

@@ -1,5 +1,6 @@
 # src/agent/repair_agent.py
 import yaml
+import re
 from pathlib import Path
 from typing import Optional
 
@@ -32,15 +33,46 @@ class RepairAgent:
         self.llm = create_llm_client(config_path)
 
     def _extract_rust_code(self, response_text: str) -> str:
-        """LLM 응답에서 순수 Rust 코드만 안전하게 추출합니다."""
+        """
+        LLM 응답에서 순수 Rust 코드를 안전하게 추출합니다.
+        '구조화된 마크다운'의 헤더를 기준으로 텍스트를 분리하여 중복 추출을 방지합니다.
+        """
         refined = response_text.strip()
-        if refined.startswith("```rust"):
-            refined = refined[7:]
-        elif refined.startswith("```"):
-            refined = refined[3:]
-        if refined.endswith("```"):
-            refined = refined[:-3]
-        return refined.strip()
+        
+        # 1. Plan 헤더 추출 및 출력
+        plan_marker = "### 1. REPAIR PLAN"
+        code_marker = "### 2. FIXED RUST CODE"
+        
+        plan_start = refined.find(plan_marker)
+        code_start = refined.find(code_marker)
+        
+        if plan_start != -1:
+            # Plan 텍스트 추출 (code_marker가 있으면 그 앞까지, 없으면 끝까지)
+            end_plan_idx = code_start if code_start != -1 else len(refined)
+            plan_text = refined[plan_start + len(plan_marker):end_plan_idx].strip()
+            if plan_text:
+                # 터미널 가독성을 위해 첫 문단만 출력
+                print(f"   💡 [Repair Plan]: {plan_text.splitlines()[0]}")
+        
+        # 2. Rust Code 추출
+        # code_marker 이후의 텍스트만 잘라냅니다. 
+        # (LLM이 앞부분에 이상한 말을 썼더라도 무시됨)
+        target_text = refined[code_start:] if code_start != -1 else refined
+        
+        backticks = "`" * 3
+        # 남은 텍스트에서 '첫 번째로' 등장하는 rust 코드 블록 딱 하나만 찾음
+        pattern = rf'{backticks}(?:rust)?\n(.*?)\n{backticks}'
+        match = re.search(pattern, target_text, re.DOTALL)
+        
+        if match:
+            return match.group(1).strip()
+            
+        # 3. 방어 코드 (Fallback)
+        # LLM이 백틱을 빼먹고 생으로 코드를 뱉었을 경우, 마커(### 2. FIXED RUST CODE) 이후의 텍스트 전체 반환
+        if code_start != -1:
+            return refined[code_start + len(code_marker):].strip()
+            
+        return refined
 
     def run(self, raw_rs_path: Path, project_name: str, is_bin: bool = True) -> Optional[Path]:
         """

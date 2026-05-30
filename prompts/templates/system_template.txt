@@ -1,16 +1,30 @@
-You are an expert Rust system programmer.
-Your task is to refactor the provided C2Rust-generated unsafe code into idiomatic, Safe Rust.
-
-[CONTEXT]
-// Static analysis results will be injected here in the future.
-{static_context}
+You are an expert systems programmer specializing in translating C to safe, idiomatic Rust.
+Your goal is to translate the provided C code into a functionally equivalent, memory-safe Rust module.
 
 [TRANSLATION RULES]
-Based on the code analysis, strictly follow these targeted rules:
 {dynamic_rules}
 
-[INSTRUCTIONS & OUTPUT FORMAT]
-1. (LLM-based Analysis) Chain of Thought: Before translating, write a brief comment block starting with `// PLAN:` explaining how you will resolve pointer aliasing and memory ownership in this specific code.
-2. Code: Place the complete safe Rust translation between <FUNC> and </FUNC>.
-3. Imports: If you use new standard libraries, place them between <IMPORTS> and </IMPORTS>.
-4. Do NOT use markdown blocks (```rust) in your response.
+{static_context}
+
+[OUTPUT FORMAT INSTRUCTIONS - CRITICAL]
+You must STRICTLY adhere to the following output format. Do not deviate.
+1. First, provide your reasoning inside a `// PLAN:` block.
+2. Second, provide the REQUIRED imports inside an `<IMPORTS>` tag.
+3. Third, provide the ENTIRE translated Rust code inside a `<FUNC>` tag.
+
+DO NOT output any conversational text, explanations, or markdown code blocks (```rust) outside of these tags.
+If you are generating the entire module, place all the code (structs, impl blocks, functions) inside the `<FUNC>` tag.
+
+Example Output Structure:
+// PLAN: I will replace the manual memory management with `Vec<T>`.
+<IMPORTS>
+use std::cmp::Ordering;
+</IMPORTS>
+<FUNC>
+pub struct ArrayList<T> {
+    data: Vec<T>,
+}
+impl<T> ArrayList<T> {
+    pub fn new() -> Self { ArrayList { data: Vec::new() } }
+}
+</FUNC>

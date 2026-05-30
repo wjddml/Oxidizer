@@ -63,27 +63,44 @@ class Orchestrator:
         except subprocess.CalledProcessError:
             return None
 
-    def _parse_llm_response(self, text: str) -> tuple[str, str, str]:
-        plan_match = re.search(r'// PLAN:(.*?)(?=<IMPORTS>|<FUNC>|$)', text, re.DOTALL)
-        imports_match = re.search(r'<IMPORTS>(.*?)</IMPORTS>', text, re.DOTALL)
-        func_match = re.search(r'<FUNC>(.*?)</FUNC>', text, re.DOTALL)
-
-        plan = plan_match.group(1).strip() if plan_match else ""
-        imports = imports_match.group(1).strip() if imports_match else ""
-        func_body = func_match.group(1).strip() if func_match else ""
+    def _parse_llm_response(self, response_text: str) -> tuple[str, str]:
+        """
+        LLM 응답에서 구조화된 마크다운을 파싱하여 plan과 safe rust 코드를 안전하게 추출합니다.
+        문자열 이스케이프나 다중 블록 출력으로 인한 중복 현상을 완벽하게 차단합니다.
+        """
+        refined = response_text.strip()
+        plan = ""
+        rust_code = ""
         
-        if not func_body:
-            func_body = self.repair_agent._extract_rust_code(text)
+        plan_marker = "### 1. TRANSLATION PLAN"
+        code_marker = "### 2. SAFE RUST CODE"
+        
+        plan_start = refined.find(plan_marker)
+        code_start = refined.find(code_marker)
+        
+        # 1. Translation Plan 추출
+        if plan_start != -1:
+            end_plan_idx = code_start if code_start != -1 else len(refined)
+            plan = refined[plan_start + len(plan_marker):end_plan_idx].strip()
             
-        return plan, imports, func_body
-
-    def _inject_into_skeleton(self, skeleton_code: str, imports: str, func_body: str) -> str:
-        injected_code = skeleton_code
-        if imports:
-            injected_code = f"{imports}\n\n{injected_code}"
-        if func_body:
-            injected_code = re.sub(r'\{[\s\n]*unimplemented!\(\);[\s\n]*\}', f"{{\n{func_body}\n}}", injected_code, count=1)
-        return injected_code
+        # 2. Safe Rust Code 추출
+        # code_marker 이후의 텍스트에 한정해서 첫 번째 코드 블록만 스캔합니다.
+        target_text = refined[code_start:] if code_start != -1 else refined
+        
+        backticks = "`" * 3
+        pattern = rf'{backticks}(?:rust)?\n(.*?)\n{backticks}'
+        match = re.search(pattern, target_text, re.DOTALL)
+        
+        if match:
+            rust_code = match.group(1).strip()
+        else:
+            # 방어 코드: 마크다운 코드 블록 지정을 누락했을 경우 마커 이후 텍스트 전체를 코드로 간주
+            if code_start != -1:
+                rust_code = refined[code_start + len(code_marker):].strip()
+            else:
+                rust_code = refined
+                
+        return plan, rust_code
 
     def run_pipeline(self, c_file: Path, input_data: str = None, expected_output: str = None, options: dict = None) -> bool:
         if options is None:
@@ -96,7 +113,7 @@ class Orchestrator:
         with open(c_file, "r", encoding="utf-8") as f:
             c_code = f.read()
             
-        # 1. 뼈대 생성
+        # 1. 뼈대 생성 (이제는 '빈칸 채우기'가 아니라 LLM의 '전역 문맥 파악용'으로 쓰임)
         rust_skeleton_code = ""
         if options.get("use_skeleton", True):
             rust_skeleton_code = self.skeleton_gen.generate_rust_skeleton(c_file, c_code)
@@ -118,31 +135,29 @@ class Orchestrator:
             retrieved_snippets = self.rag_retriever.retrieve_examples(c_fingerprint)
             rag_examples_str = self.rag_retriever.format_for_prompt(retrieved_snippets)
         
-        # 5. 프롬프트 조립 (5대 YAML 규칙 자동 매핑 포함)
+        # 5. 프롬프트 조립 및 LLM 호출 (구조화된 마크다운 출력 강제)
         print("\n🧠 [Phase 4] LLM에게 변환 요청 중...")
         master_messages = self.prompt_builder.build_master_prompt(
             c_code=c_code,
             c2rust_code=c2rust_code,
             c_fingerprint_str=c_fingerprint_str,
-            rag_examples_str=rag_examples_str
+            rag_examples_str=rag_examples_str,
+            skeleton_code=rust_skeleton_code  # 뼈대를 컨텍스트로 제공
         )
         
         llm_response = self.llm.generate(master_messages)
-        plan, imports, func_body = self._parse_llm_response(llm_response)
+        plan, final_code = self._parse_llm_response(llm_response)
         
         if plan:
             print(f"\n💡 [LLM Reasoning PLAN]\n{plan}\n")
             
-        # 6. 스켈레톤 이식
-        if options.get("use_skeleton", True) and rust_skeleton_code:
-            final_code = self._inject_into_skeleton(rust_skeleton_code, imports, func_body)
-        else:
-            final_code = f"{imports}\n\n{func_body}" if func_body else self.repair_agent._extract_rust_code(llm_response)
-        
+        # 6. 결과물 저장
+        # 정규식 기반 _inject_into_skeleton 완전 폐기.
+        # LLM이 뼈대를 참고하여 완성한 전체(Full) 모듈 코드를 그대로 저장.
         final_rs_path = self.output_dir / c_file.with_suffix('.rs').name
         self.workspace.write_code(final_rs_path, final_code)
         
-        # 7. 사후 복구
+        # 7. 사후 복구 (Repair Agent)
         if options.get("use_repair", True):
             target_rs_path = self.repair_agent.run(final_rs_path, c_file.stem, is_bin=True)
             if not target_rs_path:
