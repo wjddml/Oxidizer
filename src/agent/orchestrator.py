@@ -66,7 +66,7 @@ class Orchestrator:
     def _parse_llm_response(self, response_text: str) -> tuple[str, str]:
         """
         LLM 응답에서 구조화된 마크다운을 파싱하여 plan과 safe rust 코드를 안전하게 추출합니다.
-        문자열 이스케이프나 다중 블록 출력으로 인한 중복 현상을 완벽하게 차단합니다.
+        유연한 정규식과 강력한 Fallback 필터로 백틱(```) 찌꺼기 혼입을 원천 차단합니다.
         """
         refined = response_text.strip()
         plan = ""
@@ -88,17 +88,26 @@ class Orchestrator:
         target_text = refined[code_start:] if code_start != -1 else refined
         
         backticks = "`" * 3
-        pattern = rf'{backticks}(?:rust)?\n(.*?)\n{backticks}'
+        # 줄바꿈(\n) 강제 조건을 \s* 로 완화하여 백틱 주변의 형태가 어긋나도 유연하게 매칭
+        pattern = rf'{backticks}(?:rust)?\s*(.*?)\s*{backticks}'
         match = re.search(pattern, target_text, re.DOTALL)
         
         if match:
             rust_code = match.group(1).strip()
         else:
-            # 방어 코드: 마크다운 코드 블록 지정을 누락했을 경우 마커 이후 텍스트 전체를 코드로 간주
+            # 3. 방어 코드 (Fallback)
+            # 마커 이후의 텍스트 전체를 가져오되, 혹시 모를 백틱 찌꺼기를 강제로 제거
             if code_start != -1:
                 rust_code = refined[code_start + len(code_marker):].strip()
             else:
                 rust_code = refined
+                
+            # 텍스트 앞부분의 ```rust 또는 ``` 제거
+            rust_code = re.sub(rf'^{backticks}(?:rust)?\s*', '', rust_code, flags=re.IGNORECASE)
+            # 텍스트 뒷부분의 ``` 제거
+            rust_code = re.sub(rf'\s*{backticks}$', '', rust_code)
+            
+            rust_code = rust_code.strip()
                 
         return plan, rust_code
 

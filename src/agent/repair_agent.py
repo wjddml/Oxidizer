@@ -35,7 +35,8 @@ class RepairAgent:
     def _extract_rust_code(self, response_text: str) -> str:
         """
         LLM 응답에서 순수 Rust 코드를 안전하게 추출합니다.
-        '구조화된 마크다운'의 헤더를 기준으로 텍스트를 분리하여 중복 추출을 방지합니다.
+        '구조화된 마크다운'의 헤더를 기준으로 텍스트를 분리하며, 
+        유연한 정규식과 강력한 Fallback 필터로 백틱(```) 찌꺼기 혼입을 원천 차단합니다.
         """
         refined = response_text.strip()
         
@@ -56,23 +57,29 @@ class RepairAgent:
         
         # 2. Rust Code 추출
         # code_marker 이후의 텍스트만 잘라냅니다. 
-        # (LLM이 앞부분에 이상한 말을 썼더라도 무시됨)
         target_text = refined[code_start:] if code_start != -1 else refined
         
         backticks = "`" * 3
-        # 남은 텍스트에서 '첫 번째로' 등장하는 rust 코드 블록 딱 하나만 찾음
-        pattern = rf'{backticks}(?:rust)?\n(.*?)\n{backticks}'
+        # 줄바꿈(\n) 강제 조건을 \s* 로 완화하여 백틱 주변의 형태가 어긋나도 유연하게 매칭
+        pattern = rf'{backticks}(?:rust)?\s*(.*?)\s*{backticks}'
         match = re.search(pattern, target_text, re.DOTALL)
         
         if match:
             return match.group(1).strip()
             
         # 3. 방어 코드 (Fallback)
-        # LLM이 백틱을 빼먹고 생으로 코드를 뱉었을 경우, 마커(### 2. FIXED RUST CODE) 이후의 텍스트 전체 반환
+        # 마커 이후의 텍스트 전체를 가져오되, 혹시 모를 백틱 찌꺼기를 강제로 제거
         if code_start != -1:
-            return refined[code_start + len(code_marker):].strip()
+            fallback_text = refined[code_start + len(code_marker):].strip()
+        else:
+            fallback_text = refined
             
-        return refined
+        # 텍스트 앞부분의 ```rust 또는 ``` 제거
+        fallback_text = re.sub(rf'^{backticks}(?:rust)?\s*', '', fallback_text, flags=re.IGNORECASE)
+        # 텍스트 뒷부분의 ``` 제거
+        fallback_text = re.sub(rf'\s*{backticks}$', '', fallback_text)
+            
+        return fallback_text.strip()
 
     def run(self, raw_rs_path: Path, project_name: str, is_bin: bool = True) -> Optional[Path]:
         """
