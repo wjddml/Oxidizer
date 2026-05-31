@@ -14,7 +14,7 @@ class RepairAgent:
     """
     컴파일러의 피드백을 받아 LLM에게 수정을 지시하는 자율 복구 에이전트입니다.
     """
-    def __init__(self, config_path: str = "config.yaml"):
+    def __init__(self, config_path: str = "config.yaml", llm_provider: str = None, llm_model: str = None):
         # 설정 로드
         with open(config_path, "r", encoding="utf-8") as f:
             self.config = yaml.safe_load(f)
@@ -30,7 +30,9 @@ class RepairAgent:
         self.runner = CargoRunner(config_path)
         self.parser = ErrorParser()
         self.builder = RepairBuilder(config_path)
-        self.llm = create_llm_client(config_path)
+        
+        # CLI에서 넘어온 LLM 옵션을 팩토리로 전달
+        self.llm = create_llm_client(config_path, provider_override=llm_provider, model_override=llm_model)
 
     def _extract_rust_code(self, response_text: str) -> str:
         """

@@ -24,7 +24,7 @@ class Orchestrator:
     (Tree-sitter 뼈대 생성 ➡️ Clang DFG 분석 ➡️ RAG 예시 검색 ➡️ LLM 합성 ➡️ Repair)
     """
     
-    def __init__(self, config_path: str = "config.yaml"):
+    def __init__(self, config_path: str = "config.yaml", llm_provider: str = None, llm_model: str = None):
         with open(config_path, "r", encoding="utf-8") as f:
             self.config = yaml.safe_load(f)
             
@@ -32,9 +32,10 @@ class Orchestrator:
         self.output_dir = self.project_root / self.config.get("paths", {}).get("data_dir", "data") / "outputs"
         self.output_dir.mkdir(parents=True, exist_ok=True)
         
-        self.llm = create_llm_client(config_path)
+        # CLI에서 넘어온 LLM 옵션을 팩토리와 RepairAgent로 전달
+        self.llm = create_llm_client(config_path, provider_override=llm_provider, model_override=llm_model)
         self.prompt_builder = PromptBuilder(config_path)
-        self.repair_agent = RepairAgent(config_path)
+        self.repair_agent = RepairAgent(config_path, llm_provider=llm_provider, llm_model=llm_model)
         self.cargo_runner = CargoRunner(config_path)
         self.test_runner = TestRunner()
         self.workspace = WorkspaceManager(self.output_dir)

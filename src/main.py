@@ -1,6 +1,7 @@
 # src/main.py
 import argparse
 import shutil
+import sys
 from pathlib import Path
 from agent.orchestrator import Orchestrator
 
@@ -27,7 +28,11 @@ def main():
     parser.add_argument("--input_txt", type=str, default=None, help="테스트 입력 텍스트 파일")
     parser.add_argument("--output_txt", type=str, default=None, help="예상 출력 텍스트 파일")
     
-    # 🎛️ 모듈 제어 스위치 (Ablation Study용) - mir 관련 삭제
+    # 🤖 LLM 제어 옵션 추가
+    parser.add_argument("--llm", type=str, choices=["gpt", "claude", "gemini"], help="사용할 LLM 제공자 (config.yaml을 오버라이드)")
+    parser.add_argument("--llm-model", type=str, help="사용할 구체적인 LLM 모델명 (ex: gpt-4o, gemini-1.5-pro)")
+    
+    # 🎛️ 모듈 제어 스위치 (Ablation Study용)
     parser.add_argument("--disable-skeleton", action="store_true", help="[Phase 1] 스켈레톤(뼈대) 생성 비활성화")
     parser.add_argument("--disable-dfg", action="store_true", help="[Phase 2] C DFG 의미론적 분석 비활성화")
     parser.add_argument("--disable-rag", action="store_true", help="[Phase 3] RAG 규칙 검색 비활성화")
@@ -45,12 +50,12 @@ def main():
     target_c_file = INPUT_DIR / args.target
     if not target_c_file.exists():
         print(f"❌ [Error] 타겟 파일이 없습니다: {target_c_file}")
-        return
+        sys.exit(1)
 
     if not check_dependencies():
-        return
+        sys.exit(1)
 
-    # 테스트 입출력 데이터 로드 로직 복구
+    # 테스트 입출력 데이터 로드
     input_data = None
     expected_output = None
     if args.input_txt and args.output_txt:
@@ -63,7 +68,13 @@ def main():
                 expected_output = f.read()
 
     config_path = str(PROJECT_ROOT / "config.yaml")
-    orchestrator = Orchestrator(config_path=config_path)
+    
+    # ⚙️ Orchestrator에 LLM 커맨드라인 옵션 전달
+    orchestrator = Orchestrator(
+        config_path=config_path,
+        llm_provider=args.llm,
+        llm_model=args.llm_model
+    )
     
     success = orchestrator.run_pipeline(
         c_file=target_c_file,
@@ -76,6 +87,7 @@ def main():
         print("\n✨ Oxidizer 파이프라인이 성공적으로 종료되었습니다.")
     else:
         print("\n💥 Oxidizer 파이프라인이 실패로 종료되었습니다.")
+        sys.exit(1)
 
 if __name__ == "__main__":
     main()

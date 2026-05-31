@@ -13,7 +13,7 @@ class GeminiClient(BaseLLMClient):
     def __init__(self, model_name: str, temperature: float = 0.2):
         api_key = os.getenv("GEMINI_API_KEY")
         if not api_key:
-            raise ValueError("❌ [Error] GEMINI_API_KEY가 없습니다.")
+            raise ValueError("❌ [Error] GEMINI_API_KEY가 없습니다. .env 파일에 등록해주세요.")
         
         self.client = genai.Client(api_key=api_key)
         self.model_name = model_name
@@ -49,16 +49,9 @@ class GeminiClient(BaseLLMClient):
                 config=types.GenerateContentConfig(**config_args)
             )
             
-            # 마스터의 마크다운 정제 로직 유지
-            refined_code = response.text.strip()
-            if refined_code.startswith("```rust"):
-                refined_code = refined_code[7:]
-            elif refined_code.startswith("```"):
-                refined_code = refined_code[3:]
-            if refined_code.endswith("```"):
-                refined_code = refined_code[:-3]
-                
-            return refined_code.strip()
+            # 파이프라인의 핵심 파서(Orchestrator)가 추출을 전담하므로
+            # 클라이언트는 마크다운을 건드리지 않고 원문 그대로 반환합니다.
+            return response.text.strip()
             
         except Exception as e:
             print(f"❌ [Error] Gemini API 호출 중 오류 발생: {e}")
