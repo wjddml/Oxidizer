@@ -1,0 +1,493 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Oxidizer — C to Safe Rust</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,400;0,500;0,600;1,400&family=Syne:wght@700;800&family=Inter:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --rust:#CE4A00;--rl:#FF6B2B;--rd:#7A2D00;
+  --safe:#16A34A;--safe-bg:rgba(22,163,74,.1);--safe-br:rgba(22,163,74,.25);
+  --err:#DC2626;--err-bg:rgba(220,38,38,.1);--err-br:rgba(220,38,38,.25);
+  --warn:#D97706;--warn-bg:rgba(217,119,6,.1);--warn-br:rgba(217,119,6,.25);
+  --bg:#0A0A0B;--bg2:#111114;--bg3:#18181C;--bg4:#1E1E23;
+  --bd:rgba(255,255,255,.07);--bdb:rgba(255,255,255,.13);
+  --t:#F0EDE8;--td:#8A8680;--tm:#55534F;
+  --mono:'IBM Plex Mono',monospace;--disp:'Syne',sans-serif;--body:'Inter',sans-serif;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--t);font-family:var(--body);font-size:15px;line-height:1.6;overflow-x:hidden;height:100vh;display:flex;flex-direction:column}
+
+/* NAV */
+nav{display:flex;align-items:center;justify-content:space-between;padding:0 28px;height:52px;border-bottom:1px solid var(--bd);background:var(--bg2);flex-shrink:0}
+.logo{font-family:var(--disp);font-size:20px;font-weight:800;letter-spacing:-.5px;color:var(--t);text-decoration:none}
+.logo span{color:var(--rl)}
+.nav-c{display:flex;align-items:center;gap:10px}
+.api-row{display:flex;align-items:center;gap:8px}
+.api-lbl{font-family:var(--mono);font-size:11px;color:var(--tm)}
+input.api-inp{background:var(--bg3);border:1px solid var(--bd);border-radius:5px;padding:5px 10px;font-family:var(--mono);font-size:12px;color:var(--t);outline:none;width:260px;transition:.15s}
+input.api-inp:focus{border-color:var(--rl)}
+input.api-inp::placeholder{color:var(--tm)}
+.save-btn{background:var(--bg3);border:1px solid var(--bd);color:var(--td);padding:5px 12px;border-radius:5px;font-size:11px;cursor:pointer;font-family:var(--mono);transition:.15s;white-space:nowrap}
+.save-btn:hover{border-color:var(--bdb);color:var(--t)}
+.server-dot{width:8px;height:8px;border-radius:50%;background:var(--tm);flex-shrink:0;transition:.3s}
+.server-dot.ok{background:var(--safe);box-shadow:0 0 6px var(--safe)}
+.server-dot.err{background:var(--err)}
+.server-lbl{font-family:var(--mono);font-size:11px;color:var(--tm)}
+
+/* MAIN LAYOUT */
+.main{display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr auto;flex:1;min-height:0;overflow:hidden}
+
+/* PANELS */
+.panel{display:flex;flex-direction:column;min-height:0;border-right:1px solid var(--bd)}
+.panel:last-child{border-right:none}
+.ph{display:flex;align-items:center;justify-content:space-between;padding:0 18px;height:42px;border-bottom:1px solid var(--bd);background:var(--bg2);flex-shrink:0}
+.ph-l{display:flex;align-items:center;gap:8px;font-family:var(--mono);font-size:11px;color:var(--td);letter-spacing:.8px;text-transform:uppercase}
+.ph-r{display:flex;align-items:center;gap:8px}
+.dot{width:7px;height:7px;border-radius:50%;display:inline-block;flex-shrink:0}
+.dc{background:#60A5FA}.dr{background:var(--rl)}.dl{background:#A78BFA}.dm{background:var(--tm)}
+.dok{background:var(--safe)}.derr{background:var(--err)}.drun{background:var(--warn);animation:pulse .9s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+
+/* INPUT */
+.input-body{flex:1;display:flex;flex-direction:column;min-height:0;position:relative}
+textarea{background:transparent;border:none;outline:none;font-family:var(--mono);font-size:13px;line-height:1.85;color:var(--t);padding:18px;resize:none;flex:1;min-height:0;width:100%;caret-color:var(--rl);tab-size:2}
+textarea::placeholder{color:var(--tm)}
+.rules-bar{display:none;flex-wrap:wrap;gap:6px;padding:8px 18px;border-top:1px solid var(--bd);background:rgba(206,74,0,.04);flex-shrink:0}
+.rules-bar.show{display:flex}
+.rc{font-family:var(--mono);font-size:10px;background:rgba(206,74,0,.1);border:1px solid rgba(206,74,0,.22);color:var(--rl);padding:2px 8px;border-radius:100px}
+.toolbar{display:flex;align-items:center;gap:8px;padding:10px 18px;border-top:1px solid var(--bd);background:var(--bg2);flex-shrink:0;flex-wrap:wrap}
+.btn{border:1px solid var(--bd);background:var(--bg3);color:var(--td);padding:7px 14px;border-radius:6px;font-size:12px;cursor:pointer;font-family:var(--mono);transition:.15s;white-space:nowrap;display:inline-flex;align-items:center;gap:5px}
+.btn:hover{border-color:var(--bdb);color:var(--t)}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.btn-run{background:var(--rust);border-color:var(--rl);color:#fff;font-size:13px;padding:8px 20px;margin-left:auto}
+.btn-run:hover:not(:disabled){background:var(--rl)}
+input[type=file]{display:none}
+label.flbl{border:1px dashed var(--bd);background:transparent;color:var(--td);padding:7px 14px;border-radius:6px;font-size:12px;cursor:pointer;font-family:var(--mono);transition:.15s;white-space:nowrap;display:inline-flex;align-items:center;gap:5px}
+label.flbl:hover{border-color:var(--rl);color:var(--rl)}
+.cc{margin-left:0;font-family:var(--mono);font-size:11px;color:var(--tm)}
+
+/* OUTPUT */
+.output-body{flex:1;overflow:auto;padding:18px;font-family:var(--mono);font-size:13px;line-height:1.85;min-height:0;position:relative}
+.placeholder{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;color:var(--tm);text-align:center;gap:10px;user-select:none}
+.placeholder .ico{font-size:38px;opacity:.35}
+pre{white-space:pre-wrap;word-break:break-all}
+.copy-btn{font-family:var(--mono);font-size:11px;background:var(--bg3);border:1px solid var(--bd);color:var(--td);padding:4px 10px;border-radius:5px;cursor:pointer;transition:.15s}
+.copy-btn:hover{border-color:var(--bdb);color:var(--t)}
+.copy-btn.copied{border-color:var(--safe-br);color:var(--safe)}
+.badge{font-family:var(--mono);font-size:11px;padding:3px 9px;border-radius:100px}
+.badge-ok{background:var(--safe-bg);border:1px solid var(--safe-br);color:var(--safe)}
+.badge-warn{background:var(--warn-bg);border:1px solid var(--warn-br);color:var(--warn)}
+.badge-err{background:var(--err-bg);border:1px solid var(--err-br);color:var(--err)}
+
+/* LOG */
+.log-panel{grid-column:1/-1;border-top:1px solid var(--bd);background:var(--bg2);display:flex;flex-direction:column;height:220px;flex-shrink:0}
+.log-head{display:flex;align-items:center;justify-content:space-between;padding:0 18px;height:36px;border-bottom:1px solid var(--bd);flex-shrink:0;cursor:pointer;user-select:none}
+.log-head:hover .ctoggle{color:var(--t)}
+.log-scroll{overflow-y:auto;flex:1;padding:8px 18px;font-family:var(--mono);font-size:12px;line-height:1.7}
+.le{display:flex;gap:10px;padding:2px 0;border-bottom:1px solid rgba(255,255,255,.025)}
+.le:last-child{border-bottom:none}
+.le-t{color:var(--tm);flex-shrink:0;min-width:50px}
+.le-tag{flex-shrink:0;padding:1px 6px;border-radius:3px;font-size:10px;font-weight:600;align-self:flex-start;margin-top:2px;letter-spacing:.3px}
+.lt-init{background:rgba(96,165,250,.12);color:#60A5FA}
+.lt-phase{background:rgba(167,139,250,.12);color:#A78BFA}
+.lt-llm{background:rgba(206,74,0,.12);color:var(--rl)}
+.lt-ok{background:var(--safe-bg);color:var(--safe)}
+.lt-err{background:var(--err-bg);color:var(--err)}
+.lt-fix{background:var(--warn-bg);color:var(--warn)}
+.lt-info{background:rgba(255,255,255,.05);color:var(--td)}
+.le-msg{color:var(--td);flex:1}
+.le-msg b{color:var(--t);font-weight:500}
+.le-msg .hl{color:var(--rl)}
+.le-msg .ok{color:var(--safe)}
+.le-msg .er{color:var(--err)}
+.ctoggle{font-family:var(--mono);font-size:11px;color:var(--tm);background:none;border:none;cursor:pointer;transition:.15s}
+
+/* DRAG */
+.drag-ol{position:fixed;inset:0;background:rgba(206,74,0,.08);border:3px dashed var(--rl);z-index:999;display:none;align-items:center;justify-content:center;backdrop-filter:blur(4px)}
+.drag-ol.on{display:flex}
+.drag-msg{font-family:var(--disp);font-size:36px;font-weight:700;color:var(--rl)}
+
+/* SYNTAX */
+.k{color:#C084FC}.ty{color:#60A5FA}.fn{color:#FDBA74}.cn{color:#86EFAC}
+.cm{color:var(--tm);font-style:italic}.st{color:#FCA5A5}.num{color:#67E8F9}.attr{color:var(--rl)}
+
+/* SCROLLBARS */
+::-webkit-scrollbar{width:4px;height:4px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--bd);border-radius:2px}
+::-webkit-scrollbar-thumb:hover{background:var(--bdb)}
+
+@media(max-width:860px){
+  .main{grid-template-columns:1fr;grid-template-rows:auto auto auto}
+  .panel{border-right:none;border-bottom:1px solid var(--bd)}
+  input.api-inp{width:160px}
+}
+</style>
+</head>
+<body>
+
+<div class="drag-ol" id="dragOl"><div class="drag-msg">Drop .c file here</div></div>
+
+<nav>
+  <a href="/" class="logo">Oxi<span>dizer</span></a>
+  <div class="nav-c">
+    <div style="display:flex;align-items:center;gap:6px">
+      <span class="server-dot" id="serverDot"></span>
+      <span class="server-lbl" id="serverLbl">checking…</span>
+    </div>
+    <div class="api-row">
+      <span class="api-lbl">API key:</span>
+      <input class="api-inp" type="password" id="apiKey" placeholder="sk-ant-api03-..." autocomplete="off">
+      <button class="save-btn" onclick="saveKey()">Save</button>
+    </div>
+  </div>
+</nav>
+
+<div class="main" id="mainGrid">
+  <!-- LEFT: C INPUT -->
+  <div class="panel">
+    <div class="ph">
+      <span class="ph-l"><span class="dot dc"></span>C Source</span>
+      <span class="cc" id="charCount">0 chars</span>
+    </div>
+    <div class="input-body">
+      <textarea id="cInput" spellcheck="false"
+        placeholder="// Paste C code here, or upload / drag a .c file...
+// Then press Run Oxidizer to translate to safe Rust."></textarea>
+      <div class="rules-bar" id="rulesBar"></div>
+    </div>
+    <div class="toolbar">
+      <label class="flbl" for="fileInput">📂 Upload .c</label>
+      <input type="file" id="fileInput" accept=".c,.h">
+      <button class="btn" onclick="loadExample()">📋 Example</button>
+      <button class="btn" onclick="clearAll()">✕ Clear</button>
+      <button class="btn btn-run" id="runBtn" onclick="startPipeline()" disabled>⚙ Run Oxidizer</button>
+    </div>
+  </div>
+
+  <!-- RIGHT: RUST OUTPUT -->
+  <div class="panel">
+    <div class="ph">
+      <span class="ph-l"><span class="dot dr" id="outDot"></span><span id="outLabel">Rust Output</span></span>
+      <div class="ph-r">
+        <span id="outBadge"></span>
+        <button class="copy-btn" id="copyBtn" style="display:none" onclick="copyOut()">Copy</button>
+      </div>
+    </div>
+    <div class="output-body" id="outputBody">
+      <div class="placeholder" id="placeholder">
+        <div class="ico">🦀</div>
+        <p>Safe Rust code will appear here<br>once the pipeline completes.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- LOG PANEL -->
+  <div class="log-panel" id="logPanel">
+    <div class="log-head" onclick="toggleLog()">
+      <span class="ph-l"><span class="dot dl"></span>Pipeline Log</span>
+      <button class="ctoggle" id="ctoggle">▼</button>
+    </div>
+    <div class="log-scroll" id="logScroll">
+      <div class="le">
+        <span class="le-t">--:--</span>
+        <span class="le-tag lt-info">READY</span>
+        <span class="le-msg">Oxidizer ready. Enter C code and press <b>Run Oxidizer</b>.</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── Rule definitions (mirrors prompts/rules/*.yaml) ────────────
+const RULES = [
+  {name:"Semantic Type Lifting",       trigger:["malloc","calloc","*const","*mut libc::c_char","*mut u8"]},
+  {name:"Nullable References",         trigger:["NULL","null",".is_null(","== 0 as *mut"]},
+  {name:"Explicit Type Casting",       trigger:["as libc::","as i32","as usize"]},
+  {name:"Zero-Cost AXM Resolution",    trigger:["*mut","&mut"]},
+  {name:"Prohibit Pointer Arithmetic", trigger:[".offset(","wrapping_add","wrapping_sub","ptr.add"]},
+  {name:"Safe Dereferencing",          trigger:["*ptr","unsafe {","unsafe{"]},
+  {name:"libc API Expansion",          trigger:["libc::","fopen","sscanf","printf","sprintf","fprintf"]},
+  {name:"String Manipulation",         trigger:["strcmp","strcpy","strlen","memset","memmove","memcpy"]},
+  {name:"Idiomatic Loop Translation",  trigger:["while ","for (","do {"]},
+  {name:"Switch → Match",              trigger:["switch ","switch("]},
+  {name:"Mutable Global Grouping",     trigger:["static "]},
+  {name:"Self-Referential Struct",     trigger:["struct ","typedef struct"]},
+];
+
+// ── State ──────────────────────────────────────────────────────
+let running = false;
+let pollTimer = null;
+let logOpen = true;
+let jobId = null;
+let logIndex = 0;
+
+// ── Server health check ────────────────────────────────────────
+async function checkServer() {
+  try {
+    const r = await fetch("/api/poll/ping");
+    // 404 means server is running (no such job), which is fine
+    const ok = r.status === 404 || r.ok;
+    setServerStatus(true);
+  } catch {
+    setServerStatus(false);
+  }
+}
+function setServerStatus(online) {
+  document.getElementById("serverDot").className = "server-dot " + (online ? "ok" : "err");
+  document.getElementById("serverLbl").textContent = online ? "server online" : "server offline";
+}
+checkServer();
+setInterval(checkServer, 10000);
+
+// ── UI helpers ─────────────────────────────────────────────────
+function ts() {
+  const n = new Date();
+  return String(n.getSeconds()).padStart(2,"0") + "." + String(n.getMilliseconds()).padStart(3,"0");
+}
+function appendLog(tag, cls, msg) {
+  const el = document.getElementById("logScroll");
+  const d  = document.createElement("div");
+  d.className = "le";
+  d.innerHTML = `<span class="le-t">${ts()}</span><span class="le-tag ${cls}">${tag}</span><span class="le-msg">${msg}</span>`;
+  el.appendChild(d);
+  el.scrollTop = el.scrollHeight;
+}
+function setOutDot(state) {
+  const d = document.getElementById("outDot");
+  d.className = "dot " + ({idle:"dm",running:"drun",ok:"dok",err:"derr"}[state]||"dm");
+}
+function toggleLog() {
+  logOpen = !logOpen;
+  document.getElementById("logScroll").style.display = logOpen ? "block" : "none";
+  document.getElementById("ctoggle").textContent = logOpen ? "▼" : "▶";
+}
+
+// ── Rule matching ──────────────────────────────────────────────
+function matchRules(code) {
+  return RULES.filter(r => r.trigger.some(t => code.includes(t)));
+}
+function updateRulesBar(code) {
+  const bar = document.getElementById("rulesBar");
+  const m = matchRules(code);
+  if (m.length) {
+    bar.className = "rules-bar show";
+    bar.innerHTML = '<span style="font-family:var(--mono);font-size:10px;color:var(--tm);flex-shrink:0">Rules:</span>' +
+      m.map(r => `<span class="rc">${r.name}</span>`).join("");
+  } else {
+    bar.className = "rules-bar";
+  }
+}
+
+// ── Input wiring ───────────────────────────────────────────────
+const cInput = document.getElementById("cInput");
+const runBtn = document.getElementById("runBtn");
+
+cInput.addEventListener("input", () => {
+  const v = cInput.value;
+  document.getElementById("charCount").textContent = v.length + " chars";
+  runBtn.disabled = running || v.trim().length < 10;
+  updateRulesBar(v);
+});
+document.getElementById("fileInput").addEventListener("change", e => {
+  const f = e.target.files[0]; if (!f) return;
+  const r = new FileReader();
+  r.onload = ev => { cInput.value = ev.target.result; cInput.dispatchEvent(new Event("input")); };
+  r.readAsText(f);
+});
+
+function clearAll() {
+  if (running) return;
+  cInput.value = ""; cInput.dispatchEvent(new Event("input"));
+  document.getElementById("rulesBar").className = "rules-bar";
+  document.getElementById("outputBody").innerHTML = `<div class="placeholder"><div class="ico">🦀</div><p>Safe Rust code will appear here<br>once the pipeline completes.</p></div>`;
+  document.getElementById("copyBtn").style.display = "none";
+  document.getElementById("outBadge").innerHTML = "";
+  setOutDot("idle");
+}
+
+function loadExample() {
+  cInput.value = `typedef void *ArrayListValue;
+typedef struct _ArrayList ArrayList;
+
+struct _ArrayList {
+    ArrayListValue *data;
+    unsigned int length;
+    unsigned int _alloced;
+};
+
+ArrayList *arraylist_new(unsigned int length) {
+    ArrayList *new_list;
+    if (length <= 0) { length = 16; }
+    new_list = (ArrayList *) malloc(sizeof(ArrayList));
+    if (new_list == NULL) { return NULL; }
+    new_list->_alloced = length;
+    new_list->length = 0;
+    new_list->data = malloc(length * sizeof(ArrayListValue));
+    if (new_list->data == NULL) {
+        free(new_list);
+        return NULL;
+    }
+    return new_list;
+}
+
+void arraylist_free(ArrayList *arraylist) {
+    if (arraylist != NULL) {
+        free(arraylist->data);
+        free(arraylist);
+    }
+}
+
+int arraylist_append(ArrayList *arraylist, ArrayListValue data) {
+    if (arraylist->length + 1 > arraylist->_alloced) {
+        unsigned int newsize = arraylist->_alloced * 2;
+        ArrayListValue *newdata = realloc(arraylist->data,
+            sizeof(ArrayListValue) * newsize);
+        if (newdata == NULL) return 0;
+        arraylist->data = newdata;
+        arraylist->_alloced = newsize;
+    }
+    arraylist->data[arraylist->length] = data;
+    ++arraylist->length;
+    return 1;
+}`;
+  cInput.dispatchEvent(new Event("input"));
+}
+
+function saveKey() {
+  const k = document.getElementById("apiKey").value.trim();
+  if (k) localStorage.setItem("ox_api_key", k);
+}
+const saved = localStorage.getItem("ox_api_key");
+if (saved) document.getElementById("apiKey").value = saved;
+
+// ── Pipeline execution ─────────────────────────────────────────
+async function startPipeline() {
+  if (running) return;
+  const apiKey = document.getElementById("apiKey").value.trim() || localStorage.getItem("ox_api_key") || "";
+  if (!apiKey) { alert("Please enter your Anthropic API key."); return; }
+  const c_code = cInput.value.trim();
+  if (!c_code) return;
+
+  running = true;
+  runBtn.disabled = true;
+  runBtn.innerHTML = "⏳ Running…";
+  document.getElementById("copyBtn").style.display = "none";
+  document.getElementById("outBadge").innerHTML = "";
+  document.getElementById("logScroll").innerHTML = "";
+  setOutDot("running");
+  document.getElementById("outputBody").innerHTML = `<div class="placeholder"><div class="ico" style="animation:pulse 1s infinite">⚙</div><p>Pipeline running…</p></div>`;
+
+  try {
+    const res = await fetch("/api/convert", {
+      method: "POST",
+      headers: {"Content-Type":"application/json"},
+      body: JSON.stringify({c_code, api_key: apiKey})
+    });
+    if (!res.ok) {
+      const e = await res.json();
+      throw new Error(e.error || "Server error");
+    }
+    const {job_id} = await res.json();
+    jobId = job_id;
+    logIndex = 0;
+    pollJob();
+  } catch(err) {
+    appendLog("ERR","lt-err",`<span class="er">${err.message}</span>`);
+    finishUI(false, "", err.message);
+  }
+}
+
+function pollJob() {
+  pollTimer = setTimeout(async () => {
+    try {
+      const r = await fetch(`/api/poll/${jobId}?since=${logIndex}`);
+      if (!r.ok) throw new Error(`Poll error ${r.status}`);
+      const d = await r.json();
+
+      // Render new log entries
+      for (const entry of d.logs) {
+        appendLog(entry.tag, entry.cls, entry.msg);
+      }
+      logIndex = d.total;
+
+      if (d.done) {
+        finishUI(d.success, d.result, d.error);
+      } else {
+        pollJob(); // continue polling
+      }
+    } catch(err) {
+      appendLog("ERR","lt-err",`Poll failed: ${err.message}`);
+      finishUI(false, "", err.message);
+    }
+  }, 600);
+}
+
+function finishUI(success, code, error) {
+  running = false;
+  runBtn.disabled = false;
+  runBtn.innerHTML = "⚙ Run Oxidizer";
+
+  if (error && !code) {
+    document.getElementById("outputBody").innerHTML =
+      `<div class="placeholder"><div class="ico">❌</div><p style="color:var(--err)">${error}</p></div>`;
+    document.getElementById("outBadge").innerHTML = `<span class="badge badge-err">error</span>`;
+    setOutDot("err");
+    return;
+  }
+
+  // Render code
+  document.getElementById("outputBody").innerHTML = `<pre>${highlightRust(code)}</pre>`;
+  const cb = document.getElementById("copyBtn");
+  cb.style.display = "inline-flex";
+  cb._code = code;
+
+  if (success) {
+    document.getElementById("outBadge").innerHTML = `<span class="badge badge-ok">✓ compile OK</span>`;
+    setOutDot("ok");
+  } else {
+    document.getElementById("outBadge").innerHTML = `<span class="badge badge-warn">best effort</span>`;
+    setOutDot("err");
+  }
+}
+
+function copyOut() {
+  const btn = document.getElementById("copyBtn");
+  navigator.clipboard.writeText(btn._code || "").then(() => {
+    btn.textContent = "✓ Copied"; btn.classList.add("copied");
+    setTimeout(() => { btn.textContent = "Copy"; btn.classList.remove("copied"); }, 2000);
+  });
+}
+
+// ── Syntax highlighter ─────────────────────────────────────────
+function highlightRust(code) {
+  return code
+    .replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")
+    .replace(/(\/\/\/[^\n]*)/g,'<span class="cm">$1</span>')
+    .replace(/(\/\/[^\n]*)/g,'<span class="cm">$1</span>')
+    .replace(/("(?:[^"\\]|\\.)*")/g,'<span class="st">$1</span>')
+    .replace(/\b(pub|fn|let|mut|struct|impl|enum|use|mod|return|if|else|for|while|loop|match|in|self|Self|where|type|trait|as|ref|move|async|await|dyn|Box|Vec|Option|Result|Some|None|Ok|Err|String|str)\b/g,'<span class="k">$1</span>')
+    .replace(/\b(i8|i16|i32|i64|i128|u8|u16|u32|u64|u128|usize|isize|f32|f64|bool|char)\b/g,'<span class="ty">$1</span>')
+    .replace(/\b([A-Z][A-Za-z0-9_]*)\b/g,'<span class="ty">$1</span>')
+    .replace(/\b(\d+(?:\.\d+)?)\b/g,'<span class="num">$1</span>')
+    .replace(/(#\[[^\]]+\])/g,'<span class="attr">$1</span>');
+}
+
+// ── Drag & drop ────────────────────────────────────────────────
+let dc = 0;
+document.body.addEventListener("dragenter", e => { e.preventDefault(); dc++; document.getElementById("dragOl").classList.add("on"); });
+document.body.addEventListener("dragleave", () => { if(--dc<=0){dc=0;document.getElementById("dragOl").classList.remove("on");} });
+document.body.addEventListener("dragover", e => e.preventDefault());
+document.body.addEventListener("drop", e => {
+  e.preventDefault(); dc=0; document.getElementById("dragOl").classList.remove("on");
+  const f = e.dataTransfer.files[0]; if(!f) return;
+  const r = new FileReader();
+  r.onload = ev => { cInput.value = ev.target.result; cInput.dispatchEvent(new Event("input")); };
+  r.readAsText(f);
+});
+</script>
+</body>
+</html>
