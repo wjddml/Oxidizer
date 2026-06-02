@@ -1,8 +1,40 @@
 # src/main.py
+import os
+import sys
+import warnings
+import logging
+from pathlib import Path
 import argparse
 import shutil
-import sys
-from pathlib import Path
+
+# 1. 1차 방어막: 환경 변수 및 로거 차단
+os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
+os.environ["TRANSFORMERS_VERBOSITY"] = "error"
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
+os.environ["TQDM_DISABLE"] = "1"
+
+warnings.filterwarnings("ignore")
+logging.getLogger("sentence_transformers").setLevel(logging.ERROR)
+logging.getLogger("huggingface_hub").setLevel(logging.ERROR)
+logging.getLogger("chromadb").setLevel(logging.ERROR)
+
+class SuppressOutput:
+    """
+    2차 절대 방어막: 컨텍스트 내에서 발생하는 모든 C/Rust/Python의 
+    터미널 강제 출력을 블랙홀(devnull)로 빨아들입니다.
+    """
+    def __enter__(self):
+        self._original_stdout = sys.stdout
+        self._original_stderr = sys.stderr
+        self._devnull = open(os.devnull, 'w')
+        sys.stdout = self._devnull
+        sys.stderr = self._devnull
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        sys.stdout = self._original_stdout
+        sys.stderr = self._original_stderr
+        self._devnull.close()
+
 from agent.orchestrator import Orchestrator
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -18,11 +50,10 @@ def check_dependencies():
     return True
 
 def main():
-    print("="*60)
-    print("🔥 Oxidizer Modular Pipeline Engine 가동 준비")
-    print("="*60)
+    from utils.ui_renderer import UIRenderer
+
+    UIRenderer.print_banner()
     
-    # 1. 공통 옵션을 처리할 부모 파서(Parent Parser) 생성
     common_parser = argparse.ArgumentParser(add_help=False)
     common_parser.add_argument("--config", type=str, default="config.yaml", help="설정 파일 경로")
     common_parser.add_argument("--llm", type=str, choices=["gpt", "claude", "gemini"], help="사용할 LLM 제공자 (config.yaml 오버라이드)")
@@ -32,21 +63,17 @@ def main():
     common_parser.add_argument("--disable-rag", action="store_true", help="[Phase 3] RAG 규칙 검색 비활성화")
     common_parser.add_argument("--disable-repair", action="store_true", help="[Phase 4] 사후 피드백 복구 루프 비활성화")
 
-    # 2. 메인 파서 및 서브 커맨드 등록
     parser = argparse.ArgumentParser(description="Oxidizer: RAG & 정적 분석 기반 C-to-Rust 에이전트")
     subparsers = parser.add_subparsers(dest="command", help="실행할 명령어를 선택하세요")
 
-    # [서브 커맨드] run: 단일 파일 변환
     run_parser = subparsers.add_parser("run", parents=[common_parser], help="단일 C 파일 변환")
     run_parser.add_argument("target", type=str, help="변환할 C 파일 이름 (data/inputs 기준)")
     run_parser.add_argument("--input_txt", type=str, default=None, help="테스트 입력 텍스트 파일")
     run_parser.add_argument("--output_txt", type=str, default=None, help="예상 출력 텍스트 파일")
 
-    # [서브 커맨드] batch: 디렉토리 전체 변환
     batch_parser = subparsers.add_parser("batch", parents=[common_parser], help="디렉토리 내 모든 C 파일 자동 변환")
     batch_parser.add_argument("dir", type=str, help="변환할 디렉토리 경로 (data/inputs 기준)")
 
-    # [서브 커맨드] eval: 성능 평가 및 지표 분석 (예정)
     eval_parser = subparsers.add_parser("eval", parents=[common_parser], help="변환된 코드 지표 분석 및 테스트")
     eval_parser.add_argument("target", type=str, help="평가할 대상 (파일 또는 디렉토리)")
 
@@ -59,7 +86,6 @@ def main():
     if not check_dependencies():
         sys.exit(1)
 
-    # 3. 파이프라인 옵션 구성
     pipeline_options = {
         "use_skeleton": not args.disable_skeleton,
         "use_dfg": not args.disable_dfg,
@@ -69,7 +95,6 @@ def main():
 
     config_path = str(PROJECT_ROOT / args.config)
 
-    # 4. 커맨드별 분기 처리
     if args.command == "run":
         target_c_file = INPUT_DIR / args.target
         if not target_c_file.exists():
@@ -87,11 +112,13 @@ def main():
                 with open(output_path, 'r', encoding='utf-8') as f:
                     expected_output = f.read()
 
-        orchestrator = Orchestrator(
-            config_path=config_path,
-            llm_provider=args.llm,
-            llm_model=args.llm_model
-        )
+        # 🔥 이곳이 핵심입니다. 모델이 로딩되는 동안 터미널 출력을 물리적으로 차단합니다.
+        with SuppressOutput():
+            orchestrator = Orchestrator(
+                config_path=config_path,
+                llm_provider=args.llm,
+                llm_model=args.llm_model
+            )
         
         success = orchestrator.run_pipeline(
             c_file=target_c_file,
@@ -100,10 +127,7 @@ def main():
             options=pipeline_options
         )
         
-        if success:
-            print("\n✨ Oxidizer 파이프라인 단일 변환이 성공적으로 종료되었습니다.")
-        else:
-            print("\n💥 Oxidizer 파이프라인 단일 변환이 실패로 종료되었습니다.")
+        if not success:
             sys.exit(1)
 
     elif args.command == "batch":
@@ -119,11 +143,13 @@ def main():
 
         print(f"📂 총 {len(c_files)}개의 C 파일을 발견했습니다. 배치 변환을 시작합니다.")
         
-        orchestrator = Orchestrator(
-            config_path=config_path,
-            llm_provider=args.llm,
-            llm_model=args.llm_model
-        )
+        # 배치 모드에서도 동일하게 차단
+        with SuppressOutput():
+            orchestrator = Orchestrator(
+                config_path=config_path,
+                llm_provider=args.llm,
+                llm_model=args.llm_model
+            )
 
         success_count = 0
         for idx, c_file in enumerate(c_files, 1):

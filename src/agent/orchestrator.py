@@ -4,6 +4,7 @@ import shutil
 import subprocess
 import yaml
 import time
+import json
 from pathlib import Path
 from typing import Optional
 
@@ -25,9 +26,7 @@ from utils.ui_renderer import UIRenderer
 from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TimeElapsedColumn
 
 class Orchestrator:
-    """
-    Oxidizer 하이브리드 파이프라인 사령탑.
-    """
+    """Oxidizer 하이브리드 파이프라인 사령탑."""
     
     def __init__(self, config_path: str = "config.yaml", llm_provider: str = None, llm_model: str = None):
         with open(config_path, "r", encoding="utf-8") as f:
@@ -69,8 +68,7 @@ class Orchestrator:
 
     def _parse_llm_response(self, response_text: str) -> tuple[str, str]:
         refined = response_text.strip()
-        plan = ""
-        rust_code = ""
+        plan, rust_code = "", ""
         
         plan_marker = "### 1. TRANSLATION PLAN"
         code_marker = "### 2. SAFE RUST CODE"
@@ -95,7 +93,6 @@ class Orchestrator:
                 rust_code = refined[code_start + len(code_marker):].strip()
             else:
                 rust_code = refined
-                
             rust_code = re.sub(rf'^{backticks}(?:rust)?\s*', '', rust_code, flags=re.IGNORECASE)
             rust_code = re.sub(rf'\s*{backticks}$', '', rust_code)
             rust_code = rust_code.strip()
@@ -106,9 +103,12 @@ class Orchestrator:
         if options is None:
             options = {"use_skeleton": True, "use_dfg": True, "use_rag": True, "use_repair": True}
 
-        logger.info("="*60)
-        logger.info(f"🔥 Oxidizer 파이프라인 가동: {c_file.name}")
-        logger.info("="*60)
+        from rich.status import Status
+        from utils.ui_renderer import console
+
+        console.print(f"\n[bold blue][~][/bold blue] Target C Source : [bold white]{c_file.name}[/bold white]")
+        console.print(f"[bold blue][~][/bold blue] Engine Config   : [bold white]{self.llm.model_name}[/bold white]")
+        console.print(f"[bold red][!][/bold red] Initializing Oxidizer Sequence...\n")
         
         with open(c_file, "r", encoding="utf-8") as f:
             c_code = f.read()
@@ -119,38 +119,37 @@ class Orchestrator:
         pipeline_success = False
         repair_attempts = 0
         
-        with Progress(
-            SpinnerColumn(),
-            TextColumn("[progress.description]{task.description}"),
-            BarColumn(),
-            TimeElapsedColumn(),
-            transient=True
-        ) as progress:
+        # RustScan 스타일: 스피너가 돌다가 완료되면 로그가 남는 방식
+        with Status("[bold cyan]Waking up modules...[/bold cyan]", spinner="bouncingBar", console=console) as status:
             
-            task = progress.add_task("[cyan]🚀 파이프라인 초기화 중...", total=6)
-            
-            progress.update(task, description="[cyan]🦴 [Phase 1] 뼈대(Skeleton) 생성 중...", advance=1)
+            # [Phase 1]
+            status.update("[bold cyan][Phase 1][/bold cyan] Extracting AST Skeleton...")
             rust_skeleton_code = ""
             if options.get("use_skeleton", True):
                 rust_skeleton_code = self.skeleton_gen.generate_rust_skeleton(c_file, c_code)
+            console.print("[bold green][+][/bold green] [bold white]Phase 1[/bold white] : AST Skeleton extracted successfully.")
             
-            progress.update(task, description="[cyan]🔍 [Phase 2] DFG 및 포인터 의도 분석 중...", advance=1)
+            # [Phase 2]
+            status.update("[bold cyan][Phase 2][/bold cyan] Analyzing Semantic DFG & Pointers...")
             c_fingerprint = {}
             c_fingerprint_str = ""
             if options.get("use_dfg", True):
                 c_fingerprint = self.c_extractor.extract_semantic_fingerprint(c_file, "main")
                 c_fingerprint_str = self.c_extractor.format_for_prompt(c_fingerprint)
+            console.print("[bold green][+][/bold green] [bold white]Phase 2[/bold white] : DFG fingerprints mapping completed.")
             
-            progress.update(task, description="[cyan]🌱 [Phase 3] 정적 분석 및 RAG 예시 검색 중...", advance=1)
+            # [Phase 3]
+            status.update("[bold cyan][Phase 3][/bold cyan] Running C2Rust & Searching RAG database...")
             c2rust_rs_path = self._run_c2rust(c_file)
             c2rust_code = self.workspace.read_code(c2rust_rs_path) if c2rust_rs_path else ""
-                
             rag_examples_str = ""
             if options.get("use_rag", True):
                 retrieved_snippets = self.rag_retriever.retrieve_examples(c_fingerprint)
                 rag_examples_str = self.rag_retriever.format_for_prompt(retrieved_snippets)
+            console.print("[bold green][+][/bold green] [bold white]Phase 3[/bold white] : RAG idioms & context retrieved.")
             
-            progress.update(task, description="[cyan]🧠 [Phase 4] LLM 통찰력 합성 및 변환 중...", advance=1)
+            # [Phase 4]
+            status.update("[bold magenta][Phase 4][/bold magenta] Synthesizing Prompts & LLM Generation (Standby...)")
             master_messages = self.prompt_builder.build_master_prompt(
                 c_code=c_code,
                 c2rust_code=c2rust_code,
@@ -158,34 +157,25 @@ class Orchestrator:
                 rag_examples_str=rag_examples_str,
                 skeleton_code=rust_skeleton_code
             )
-            
-            logger.debug(f"MASTER PROMPT MESSAGES:\n{master_messages}")
-            
             llm_response = self.llm.generate(master_messages)
             plan, final_code = self._parse_llm_response(llm_response)
-            
-            if plan:
-                logger.info("💡 [LLM Reasoning PLAN] 추출 완료 (디버그 로그 참조)")
-                logger.debug(f"LLM Reasoning PLAN:\n{plan}")
-                
             self.workspace.write_code(final_rs_path, final_code)
+            console.print("[bold green][+][/bold green] [bold white]Phase 4[/bold white] : Safe Rust generated by LLM.")
             
-            progress.update(task, description="[cyan]🛠️ [Phase 5] 컴파일 검증 및 자율 수리 중...", advance=1)
+            # [Phase 5]
+            status.update("[bold yellow][Phase 5][/bold yellow] Cargo compilation & Auto-Repair Agent running...")
             if options.get("use_repair", True):
                 target_rs_path, repair_attempts = self.repair_agent.run(final_rs_path, c_file.stem, is_bin=True)
                 if target_rs_path:
                     pipeline_success = True
-                    logger.info(f"✅ 파이프라인 성공! 결과물: {target_rs_path}")
-                else:
-                    logger.error("❌ 파이프라인 완료 실패: 컴파일 수리 불가능")
             else:
                 target_rs_path = final_rs_path
                 pipeline_success = True
-                logger.info(f"✅ 결과물 저장 완료: {final_rs_path}")
                 
-            progress.update(task, description="[green]✨ 파이프라인 작업 완료!", advance=1)
+            console.print(f"[bold green][+][/bold green] [bold white]Phase 5[/bold white] : Auto-Repair loop finished. (Attempts: {repair_attempts})")
             time.sleep(0.5)
 
+        # 결과 처리 및 지표 저장
         duration_sec = time.time() - start_time
         analysis_target_path = target_rs_path if target_rs_path else final_rs_path
         final_rust_code = self.workspace.read_code(analysis_target_path) if analysis_target_path.exists() else ""
@@ -194,9 +184,33 @@ class Orchestrator:
             c_code=c_code,
             rust_code=final_rust_code,
             repair_attempts=repair_attempts,
-            duration_sec=duration_sec
+            duration_sec=duration_sec,
+            llm_model=self.llm.model_name
         )
         
         UIRenderer.render_dashboard(report, file_name=c_file.name)
+        
+        # 🔒 [개인정보 보호] 절대 경로를 프로젝트 기준 상대 경로로 변환
+        try:
+            display_target = analysis_target_path.relative_to(self.project_root)
+        except ValueError:
+            display_target = analysis_target_path.name
+            
+        metrics_file = self.output_dir / f"{c_file.stem}_metrics.json"
+        with open(metrics_file, "w", encoding="utf-8") as f:
+            json.dump(report, f, indent=4)
+            
+        try:
+            display_metrics = metrics_file.relative_to(self.project_root)
+        except ValueError:
+            display_metrics = metrics_file.name
+        
+        # 깔끔하게 상대 경로로 출력
+        if pipeline_success:
+            console.print(f"[bold green]Open[/bold green] ./{display_target}")
+        else:
+            console.print(f"[bold red]Closed[/bold red] Repair failed. See logs.")
+            
+        console.print(f"[bold green]Open[/bold green] ./{display_metrics}\n")
 
         return pipeline_success

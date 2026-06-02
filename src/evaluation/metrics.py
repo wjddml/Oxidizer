@@ -54,7 +54,7 @@ class MetricsCollector:
             "expansion_ratio": round(ratio, 2)
         }
 
-    def generate_report(self, c_code: str, rust_code: str, repair_attempts: int, duration_sec: float = 0.0) -> dict:
+    def generate_report(self, c_code: str, rust_code: str, repair_attempts: int, duration_sec: float = 0.0, llm_model: str = "Unknown") -> dict:
         """
         모든 지표를 취합하여 최종 분석 리포트 딕셔너리를 반환합니다.
         이 데이터는 추후 터미널 대시보드 렌더링에 사용됩니다.
@@ -65,6 +65,7 @@ class MetricsCollector:
         
         report["repair_attempts"] = repair_attempts
         report["duration_seconds"] = round(duration_sec, 2)
+        report["llm_model"] = llm_model  # <--- LLM 엔진 정보 추가
         
         # 완전 안전성 확보 여부 (Boolean)
         report["is_fully_safe"] = (report["total_unsafe_elements"] == 0)

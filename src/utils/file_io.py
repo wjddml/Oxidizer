@@ -2,6 +2,7 @@
 import os
 import shutil
 from pathlib import Path
+from utils.logger import logger  # 전역 로거 임포트
 
 class WorkspaceManager:
     """
@@ -45,7 +46,8 @@ libc = "0.2"
         target_rs_path = src_dir / target_file_name
         shutil.copy2(raw_rs_path, target_rs_path)
         
-        print(f"📦 [Scaffold] Cargo 프로젝트 세팅 완료: {project_dir}")
+        # 터미널 깨짐 방지를 위해 print -> logger.debug 로 강등
+        logger.debug(f"📦 [Scaffold] Cargo 프로젝트 세팅 완료: {project_dir}")
         return project_dir
 
     def backup_file(self, file_path: Path):
@@ -60,7 +62,7 @@ libc = "0.2"
         if backup_path.exists():
             shutil.copy2(backup_path, file_path)
             backup_path.unlink()  # 롤백 후 백업 찌꺼기 삭제
-            print(f"🔄 [Rollback] 치명적 오류로 인해 {file_path.name} 파일이 원상 복구되었습니다.")
+            logger.debug(f"🔄 [Rollback] 치명적 오류로 인해 {file_path.name} 파일이 원상 복구되었습니다.")
 
     def read_code(self, file_path: Path) -> str:
         with open(file_path, "r", encoding="utf-8") as f:

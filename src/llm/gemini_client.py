@@ -5,9 +5,8 @@ from google.genai import types
 from dotenv import load_dotenv
 from typing import List, Dict
 from .base_client import BaseLLMClient
-from utils.logger import logger  # 로거 임포트
+from utils.logger import logger
 
-# 환경 변수 로드
 load_dotenv()
 
 class GeminiClient(BaseLLMClient):
@@ -21,12 +20,11 @@ class GeminiClient(BaseLLMClient):
         self.temperature = temperature
 
     def generate(self, messages: List[Dict[str, str]]) -> str:
-        logger.info("🤖 [LLM] Gemini에게 변환/수정을 요청하는 중...")
+        # 터미널 깨짐 방지를 위해 info -> debug로 강등
+        logger.debug("🤖 [LLM] Gemini API 호출 중...") 
         
         system_instruction = ""
         contents = []
-        
-        # 메시지 배열을 Gemini SDK 규격에 맞게 변환
         for msg in messages:
             if msg["role"] == "system":
                 system_instruction += msg["content"] + "\n"
@@ -49,9 +47,7 @@ class GeminiClient(BaseLLMClient):
                 contents=contents,
                 config=types.GenerateContentConfig(**config_args)
             )
-            
             return response.text.strip()
-            
         except Exception as e:
             logger.error(f"❌ [Error] Gemini API 호출 중 오류 발생: {e}")
             return ""

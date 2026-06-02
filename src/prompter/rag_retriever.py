@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Dict, List, Any
 import chromadb
 from chromadb.utils import embedding_functions
+from utils.logger import logger  # 로거 임포트 추가
 
 class RagRetriever:
     """
@@ -27,18 +28,16 @@ class RagRetriever:
     def seed_database(self, examples_dir: Path):
         """
         data/examples 디렉토리의 JSON/YAML 파일들에서 Safe Rust 코드 예시를 적재합니다.
-        (예시 포맷: {"intent": "배열 순회 포인터 연산", "code": "for (i, v) in arr.iter().enumerate() {}"})
         """
         if not examples_dir.exists():
-            print(f"⚠️ [RAG] 예시 코드가 있는 '{examples_dir}' 폴더가 없습니다. RAG 적재를 건너뜁니다.")
+            logger.warning(f"⚠️ [RAG] 예시 코드가 있는 '{examples_dir}' 폴더가 없습니다. RAG 적재를 건너뜁니다.")
             return
 
-        print(f"🌱 [RAG] '{examples_dir}'에서 Safe Rust 변환 예시를 벡터 DB에 적재 중...")
+        logger.debug(f"🌱 [RAG] '{examples_dir}'에서 Safe Rust 변환 예시를 벡터 DB에 적재 중...")
         existing_ids = self.collection.get()["ids"] if self.collection.count() > 0 else []
         
         ids_to_add, documents_to_add, metadatas_to_add = [], [], []
         
-        # .json 파일 형태의 예시 데이터베이스를 가정
         for file_path in examples_dir.glob("*.json"):
             try:
                 with open(file_path, "r", encoding="utf-8") as f:
@@ -48,12 +47,10 @@ class RagRetriever:
                     ex_id = f"{file_path.stem}_ex_{i}"
                     if ex_id not in existing_ids:
                         ids_to_add.append(ex_id)
-                        # 특징(Intent)을 문서(검색 기준)로 사용
                         documents_to_add.append(ex.get("intent", ""))
-                        # 실제 코드는 메타데이터로 숨김
                         metadatas_to_add.append({"snippet": ex.get("code", "")})
             except Exception as e:
-                print(f"⚠️ [Warning] {file_path.name} 예시 로드 실패: {e}")
+                logger.error(f"⚠️ [Warning] {file_path.name} 예시 로드 실패: {e}")
                 
         if ids_to_add:
             self.collection.add(
@@ -61,7 +58,7 @@ class RagRetriever:
                 metadatas=metadatas_to_add,
                 ids=ids_to_add
             )
-            print(f"✅ [RAG] {len(ids_to_add)}개의 신규 변환 예시 적재 완료.")
+            logger.debug(f"✅ [RAG] {len(ids_to_add)}개의 신규 변환 예시 적재 완료.")
 
     def retrieve_examples(self, semantic_fingerprints: Dict[str, Any], top_k: int = 2) -> List[str]:
         """
@@ -70,7 +67,7 @@ class RagRetriever:
         if not semantic_fingerprints or "fingerprints" not in semantic_fingerprints:
             return []
             
-        print("🔎 [RAG] C DFG 지문을 바탕으로 가장 유사한 Safe Rust 예시 코드 검색 중...")
+        logger.debug("🔎 [RAG] C DFG 지문을 바탕으로 가장 유사한 Safe Rust 예시 코드 검색 중...")
         queries = []
         for var, data in semantic_fingerprints["fingerprints"].items():
             features = [data.get("type", "")]
@@ -87,7 +84,7 @@ class RagRetriever:
         )
         
         retrieved_snippets = set()
-        if results and "metadatas" in results:
+        if results and "metadatas" in results and results["metadatas"]:
             for metadata_list in results["metadatas"]:
                 for metadata in metadata_list:
                     retrieved_snippets.add(metadata.get("snippet", ""))
