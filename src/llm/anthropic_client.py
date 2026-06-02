@@ -3,6 +3,7 @@ import os
 from dotenv import load_dotenv
 from typing import List, Dict
 from .base_client import BaseLLMClient
+from utils.logger import logger  # 로거 임포트
 
 load_dotenv()
 
@@ -22,7 +23,7 @@ class AnthropicClient(BaseLLMClient):
         self.temperature = temperature
 
     def generate(self, messages: List[Dict[str, str]]) -> str:
-        print("🤖 [LLM] Anthropic(Claude)에게 변환/수정을 요청하는 중...")
+        logger.info("🤖 [LLM] Anthropic(Claude)에게 변환/수정을 요청하는 중...")
         
         system_msg = ""
         user_msgs = []
@@ -37,10 +38,10 @@ class AnthropicClient(BaseLLMClient):
                 model=self.model_name,
                 system=system_msg,
                 messages=user_msgs,
-                max_tokens=4096,  # 코드를 온전히 출력하기 위해 넉넉한 토큰 확보
+                max_tokens=4096,
                 temperature=self.temperature
             )
             return response.content[0].text.strip()
         except Exception as e:
-            print(f"❌ [Error] Anthropic API 호출 중 오류 발생: {e}")
+            logger.error(f"❌ [Error] Anthropic API 호출 중 오류 발생: {e}")
             return ""

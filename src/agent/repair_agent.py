@@ -9,6 +9,7 @@ from utils.cargo_runner import CargoRunner
 from utils.error_parser import ErrorParser
 from prompter.repair_builder import RepairBuilder
 from llm.llm_factory import create_llm_client
+from utils.logger import logger  # 전역 로거 임포트
 
 class RepairAgent:
     """
@@ -54,8 +55,9 @@ class RepairAgent:
             end_plan_idx = code_start if code_start != -1 else len(refined)
             plan_text = refined[plan_start + len(plan_marker):end_plan_idx].strip()
             if plan_text:
-                # 터미널 가독성을 위해 첫 문단만 출력
-                print(f"   💡 [Repair Plan]: {plan_text.splitlines()[0]}")
+                # 터미널 가독성을 위해 첫 문단만 출력하고 나머지는 파일로 전송
+                logger.info(f"   💡 [Repair Plan]: {plan_text.splitlines()[0]}")
+                logger.debug(f"FULL REPAIR PLAN:\n{plan_text}")
         
         # 2. Rust Code 추출
         # code_marker 이후의 텍스트만 잘라냅니다. 
@@ -88,24 +90,28 @@ class RepairAgent:
         자동 복구 루프를 실행합니다.
         :return: 복구 성공 시 최종 .rs 파일 경로 반환, 실패 시 None 반환
         """
-        print(f"\n🧠 [Repair Agent] '{project_name}' 자동 복구 루프 시작 (최대 {self.max_retries}회)")
+        logger.info(f"🧠 [Repair Agent] '{project_name}' 자동 복구 루프 시작 (최대 {self.max_retries}회)")
         
         # 1. 샌드박스 작업 공간(Cargo Project) 세팅
         project_dir = self.workspace.setup_cargo_project(raw_rs_path, project_name, is_bin)
         target_rs_path = project_dir / "src" / ("main.rs" if is_bin else "lib.rs")
         
         for attempt in range(1, self.max_retries + 1):
-            print(f"\n🔄 [Attempt {attempt}/{self.max_retries}] 컴파일 검증 중...")
+            logger.info(f"🔄 [Attempt {attempt}/{self.max_retries}] 컴파일 검증 중...")
             
             # 2. 컴파일 검증 (cargo check)
             success, stdout, stderr = self.runner.run_check(project_dir)
             
             if success:
-                print(f"✅ [Attempt {attempt}] 컴파일 성공! 안전한 Rust 코드가 확보되었습니다.")
+                logger.info(f"✅ [Attempt {attempt}] 컴파일 성공! 안전한 Rust 코드가 확보되었습니다.")
                 return target_rs_path
                 
             # 3. 에러 파싱 및 카테고리화
-            print(f"⚠️ [Attempt {attempt}] 컴파일 실패. 에러를 분석합니다.")
+            logger.warning(f"⚠️ [Attempt {attempt}] 컴파일 실패. 에러를 분석합니다.")
+            
+            # 디버그 로그에만 실제 컴파일 에러 전체 기록
+            logger.debug(f"[Attempt {attempt}] COMPILER STDERR:\n{stderr}")
+            
             parsed_errors = self.parser.parse_stderr(stderr)
             formatted_errors = self.parser.format_for_llm(parsed_errors)
             
@@ -122,21 +128,22 @@ class RepairAgent:
             messages = self.builder.build_repair_messages(broken_code, formatted_errors, parsed_errors, attempt)
             
             # 6. LLM 수리 요청
-            print(f"🤖 [Attempt {attempt}] LLM에게 맞춤형 에러 수정 요청 중...")
+            logger.info(f"🤖 [Attempt {attempt}] LLM에게 맞춤형 에러 수정 요청 중...")
             response_text = self.llm.generate(messages)
             
             if not response_text:
-                print("❌ [Error] LLM 응답이 비어있습니다. 이전 상태로 롤백합니다.")
+                logger.error("❌ [Error] LLM 응답이 비어있습니다. 이전 상태로 롤백합니다.")
                 self.workspace.rollback_file(target_rs_path)
                 break
                 
             repaired_code = self._extract_rust_code(response_text)
+            logger.debug(f"[Attempt {attempt}] REPAIRED CODE:\n{repaired_code}")
             
             # 7. 수정된 코드를 파일에 덮어쓰기
             self.workspace.write_code(target_rs_path, repaired_code)
-            print(f"📝 [Attempt {attempt}] 수정된 코드를 프로젝트에 적용했습니다.")
+            logger.info(f"📝 [Attempt {attempt}] 수정된 코드를 프로젝트에 적용했습니다.")
 
         # 루프를 모두 소모했는데도 success가 되지 않은 경우
-        print(f"\n❌ [Repair Agent] {self.max_retries}회 시도 초과. 복구에 실패했습니다.")
+        logger.error(f"❌ [Repair Agent] {self.max_retries}회 시도 초과. 복구에 실패했습니다.")
         self.workspace.rollback_file(target_rs_path)
         return None

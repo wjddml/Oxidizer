@@ -12,6 +12,7 @@ from agent.repair_agent import RepairAgent
 from utils.cargo_runner import CargoRunner
 from utils.test_runner import TestRunner
 from utils.file_io import WorkspaceManager
+from utils.logger import logger  # 전역 로거 임포트
 
 from analyzer.dependency_graph import DependencyAnalyzer
 from analyzer.skeleton_generator import SkeletonGenerator
@@ -116,19 +117,19 @@ class Orchestrator:
         if options is None:
             options = {"use_skeleton": True, "use_dfg": True, "use_rag": True, "use_repair": True}
 
-        print("="*60)
-        print(f"🔥 Oxidizer 파이프라인 가동: {c_file.name}")
-        print("="*60)
+        logger.info("="*60)
+        logger.info(f"🔥 Oxidizer 파이프라인 가동: {c_file.name}")
+        logger.info("="*60)
         
         with open(c_file, "r", encoding="utf-8") as f:
             c_code = f.read()
             
-        # 1. 뼈대 생성 (이제는 '빈칸 채우기'가 아니라 LLM의 '전역 문맥 파악용'으로 쓰임)
+        # 1. 뼈대 생성
         rust_skeleton_code = ""
         if options.get("use_skeleton", True):
             rust_skeleton_code = self.skeleton_gen.generate_rust_skeleton(c_file, c_code)
         
-        # 2. C DFG 분석 (지문 추출)
+        # 2. C DFG 분석
         c_fingerprint = {}
         c_fingerprint_str = ""
         if options.get("use_dfg", True):
@@ -139,31 +140,33 @@ class Orchestrator:
         c2rust_rs_path = self._run_c2rust(c_file)
         c2rust_code = self.workspace.read_code(c2rust_rs_path) if c2rust_rs_path else ""
             
-        # 4. RAG 처방전 (Safe Rust 예시) 검색
+        # 4. RAG 처방전 검색
         rag_examples_str = ""
         if options.get("use_rag", True):
             retrieved_snippets = self.rag_retriever.retrieve_examples(c_fingerprint)
             rag_examples_str = self.rag_retriever.format_for_prompt(retrieved_snippets)
         
-        # 5. 프롬프트 조립 및 LLM 호출 (구조화된 마크다운 출력 강제)
-        print("\n🧠 [Phase 4] LLM에게 변환 요청 중...")
+        # 5. 프롬프트 조립 및 LLM 호출
+        logger.info("🧠 [Phase 4] LLM에게 변환 요청 중...")
         master_messages = self.prompt_builder.build_master_prompt(
             c_code=c_code,
             c2rust_code=c2rust_code,
             c_fingerprint_str=c_fingerprint_str,
             rag_examples_str=rag_examples_str,
-            skeleton_code=rust_skeleton_code  # 뼈대를 컨텍스트로 제공
+            skeleton_code=rust_skeleton_code
         )
+        
+        # 원시 프롬프트를 디버그 로그에만 기록
+        logger.debug(f"MASTER PROMPT MESSAGES:\n{master_messages}")
         
         llm_response = self.llm.generate(master_messages)
         plan, final_code = self._parse_llm_response(llm_response)
         
         if plan:
-            print(f"\n💡 [LLM Reasoning PLAN]\n{plan}\n")
+            logger.info("💡 [LLM Reasoning PLAN] 추출 완료 (디버그 로그 참조)")
+            logger.debug(f"LLM Reasoning PLAN:\n{plan}")
             
         # 6. 결과물 저장
-        # 정규식 기반 _inject_into_skeleton 완전 폐기.
-        # LLM이 뼈대를 참고하여 완성한 전체(Full) 모듈 코드를 그대로 저장.
         final_rs_path = self.output_dir / c_file.with_suffix('.rs').name
         self.workspace.write_code(final_rs_path, final_code)
         
@@ -171,10 +174,10 @@ class Orchestrator:
         if options.get("use_repair", True):
             target_rs_path = self.repair_agent.run(final_rs_path, c_file.stem, is_bin=True)
             if not target_rs_path:
-                print("\n❌ 파이프라인 완료 실패: 컴파일 수리 불가능")
+                logger.error("❌ 파이프라인 완료 실패: 컴파일 수리 불가능")
                 return False
-            print(f"\n✅ 파이프라인 성공! 결과물: {target_rs_path}")
+            logger.info(f"✅ 파이프라인 성공! 결과물: {target_rs_path}")
         else:
-            print(f"\n✅ 결과물 저장 완료: {final_rs_path}")
+            logger.info(f"✅ 결과물 저장 완료: {final_rs_path}")
 
         return True

@@ -5,6 +5,7 @@ from google.genai import types
 from dotenv import load_dotenv
 from typing import List, Dict
 from .base_client import BaseLLMClient
+from utils.logger import logger  # 로거 임포트
 
 # 환경 변수 로드
 load_dotenv()
@@ -20,7 +21,7 @@ class GeminiClient(BaseLLMClient):
         self.temperature = temperature
 
     def generate(self, messages: List[Dict[str, str]]) -> str:
-        print("🤖 [LLM] Gemini에게 변환/수정을 요청하는 중...")
+        logger.info("🤖 [LLM] Gemini에게 변환/수정을 요청하는 중...")
         
         system_instruction = ""
         contents = []
@@ -49,10 +50,8 @@ class GeminiClient(BaseLLMClient):
                 config=types.GenerateContentConfig(**config_args)
             )
             
-            # 파이프라인의 핵심 파서(Orchestrator)가 추출을 전담하므로
-            # 클라이언트는 마크다운을 건드리지 않고 원문 그대로 반환합니다.
             return response.text.strip()
             
         except Exception as e:
-            print(f"❌ [Error] Gemini API 호출 중 오류 발생: {e}")
+            logger.error(f"❌ [Error] Gemini API 호출 중 오류 발생: {e}")
             return ""

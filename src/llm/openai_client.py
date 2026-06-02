@@ -3,6 +3,7 @@ import os
 from dotenv import load_dotenv
 from typing import List, Dict
 from .base_client import BaseLLMClient
+from utils.logger import logger  # 로거 임포트
 
 load_dotenv()
 
@@ -22,7 +23,7 @@ class OpenAIClient(BaseLLMClient):
         self.temperature = temperature
 
     def generate(self, messages: List[Dict[str, str]]) -> str:
-        print("🤖 [LLM] OpenAI(GPT)에게 변환/수정을 요청하는 중...")
+        logger.info("🤖 [LLM] OpenAI(GPT)에게 변환/수정을 요청하는 중...")
         try:
             response = self.client.chat.completions.create(
                 model=self.model_name,
@@ -31,5 +32,5 @@ class OpenAIClient(BaseLLMClient):
             )
             return response.choices[0].message.content.strip()
         except Exception as e:
-            print(f"❌ [Error] OpenAI API 호출 중 오류 발생: {e}")
+            logger.error(f"❌ [Error] OpenAI API 호출 중 오류 발생: {e}")
             return ""
