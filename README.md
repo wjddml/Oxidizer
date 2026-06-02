@@ -1,96 +1,110 @@
-# Oxidizer: Human-Insight Guided C-to-Rust Transpiler
+Oxidizer 🦀
 
-> 인간 통찰력 기반 LLM 제어를 통한 C 코드의 관용적(Idiomatic) Rust 자동 변환 파이프라인
-> 
-> 
-> 캡스톤 디자인 프로젝트 (팀명: Oxidizer)
-> 
+Human-Insight Guided C-to-Rust Transpilation Agent Framework
 
-## 1. 프로젝트 개발 목표 (Project Goals)
+Oxidizer는 레거시 C 소스 코드를 메모리 안전성이 보장된 관용적(Idiomatic) Rust 코드로 자동 변환하는 자율형 AI 에이전트 프레임워크입니다.
 
-본 프로젝트의 최우선 목표는 사용자가 C 소스 코드를 제공했을 때, 사람의 개입 없이 최종적으로 메모리 안전성이 보장된 Rust 코드를 반환하는 **'End-to-End 자동화 파이프라인'**을 구축하는 것입니다. 기존 정적 변환 도구(C2Rust)의 한계와 LLM의 환각 현상을 극복하기 위해, 인간이 분석한 실패 패턴(Insight)을 영어 기반의 프롬프트로 LLM에 주입하여 변환을 제어합니다.
+기존의 정적 변환기(e.g., C2Rust)가 생성하는 거대한 unsafe 블록의 한계와 순수 LLM이 겪는 대용량 문맥 소실(Context Loss) 문제를 해결하기 위해, 정적 분석 기술과 인간 전문가의 변환 통찰력(Human-Insight)을 결합한 하이브리드 엔진을 제안합니다.
 
-1. **완전 자동화 파이프라인 구축 (최우선):** C 소스 코드 입력부터 정적 변환, LLM API 호출, 컴파일 에러 피드백 루프, 최종 결과물 출력까지 전 과정을 통제하는 메인 엔진(Orchestrator) 개발.
-2. **영문 기반 통찰력 주입 (Prompt Engineering):** C2Rust가 남긴 `unsafe` 블록과 Raw Pointer를 식별하고, 이를 Safe Rust로 승격(Lifting)시키기 위한 구체적인 영문 가이드라인(Insight Prompts) 설계.
-3. **일반화 성능 검증:** 함수 단위의 벤치마크(CRUST-bench)에서 파이프라인을 고도화한 뒤, 실무 수준의 복잡도(Syzygy_Zopfli)로 확장하여 성능 검증.
+✨ 주요 기능 (Key Features)
 
-## 2. 핵심 기능 및 파이프라인 (Core Features & Pipeline)
+End-to-End 자율 변환 파이프라인: 단일 소스 파일뿐만 아니라 디렉토리 단위의 대량 C 파일(batch)을 사람의 개입 없이 일괄 변환합니다.
 
-### 전체 파이프라인 흐름도 (Architecture)
+문맥 인식 정적 분석 (Context-Aware Analysis): Tree-sitter 및 Clang 기반 파서를 활용하여 C 함수의 추상 구문 뼈대(Skeleton)와 포인터 데이터 흐름(DFG) 지문을 사전에 추출합니다.
 
-```
+RAG 기반 동적 지식 주입: 과거의 성공적인 변환 사례(Historical traces)를 벡터 데이터베이스에서 검색하여 모델에 최적의 처방전(Prompt)을 동적으로 제공합니다.
+
+지능형 자동 복구 루프 (Resilient Auto-Repair): 샌드박스 환경에서 rustc 컴파일러의 에러(OS 레벨 및 구문 에러)를 파싱하고, 원인을 분석하여 스스로 코드를 수정하는 피드백 루프를 가동합니다.
+
+다중 LLM 아키텍처 (Model Agnostic): 특정 벤더에 종속되지 않으며, CLI 옵션을 통해 최신 LLM(OpenAI GPT-4o, Anthropic Claude 3.5, Google Gemini 2.5) 간의 자유로운 스위칭을 지원합니다.
+
+실시간 대시보드 및 지표 시각화 (Rich Telemetry): 변환 진행률과 함께 최종 생성물의 안전성 점수(Safety Score), 코드 확장률(LOC Ratio), 수리 소요 횟수 등을 직관적인 터미널 UI로 제공합니다.
+
+⚠️ 현재의 한계 및 범위 (Known Limitations & Scope)
+
+Oxidizer는 현재 파일 및 모듈 단위의 독립적 변환에 고도로 최적화되어 있으며, 다음과 같은 한계점을 가집니다. 향후 릴리즈를 통해 점진적으로 개선될 예정입니다.
+
+복잡한 빌드 시스템 의존성: 수십 개의 Makefile과 복잡하게 얽힌 거대 프로젝트의 매크로 및 전역 의존성을 완벽하게 자동 해결하는 기능은 아직 지원하지 않습니다.
+
+런타임 동작 동등성 검증: 컴파일 통과 및 문법적 안전성은 보장하나, 논리적 의미론(Semantic Equivalence)이 동일하게 동작하는지에 대한 런타임 100% 자동 검증은 별도의 I/O 테스트 케이스가 동반되어야 합니다.
+
+시스템 종속적 동시성 모델 재설계: C의 플랫폼 종속적인 스레딩 로직(예: pthread)을 Rust의 안전한 동시성 모델(Arc<Mutex<T>>)로 완벽하게 자율 재설계하는 것에는 프롬프트 기반 LLM 추론의 한계가 존재합니다.
+
+🏗️ 시스템 아키텍처 (Pipeline Architecture)
+
+Oxidizer의 메인 엔진(Orchestrator)은 총 6개의 독립적인 페이즈로 구성된 파이프라인을 비동기적으로 지휘합니다.
+
 [User Input] C Source Code (.c)
    │
    ▼
-[Main Engine] Automation Orchestrator (Python)
+[Orchestrator] Oxidizer Main Engine
    │
-   ├─► [Step 1: 정적 변환] C2Rust Transpiler 실행
-   │     └─ 결과: 기능은 동일하지만 `unsafe`로 가득 찬 1차 Rust 코드
+   ├─► [Phase 1: Skeleton] 파서를 통한 함수 인터페이스 및 전역 구조체 뼈대 추출
+   ├─► [Phase 2: Semantic DFG] 포인터 의도 및 데이터 흐름 지문(Fingerprint) 추출
+   ├─► [Phase 3: RAG & C2Rust] 유사 Safe Rust 모범 답안 검색 및 C2Rust 참조 코드 생성
+   ├─► [Phase 4: LLM Synthesis] 문맥 조립 및 LLM 합성 (구조화된 마크다운 반환)
+   ├─► [Phase 5: Auto-Repair] Cargo Sandbox 기반 컴파일 검증 및 자율 수리 루프 (Max N Retries)
    │
-   ├─► [Step 2: 통찰력 주입] Prompt Generator
-   │     └─ 인간이 분석한 C-to-Rust 변환 패턴 가이드(English) 동적 결합
+   ▼
+[Phase 6: Metrics & UI] 성능 지표 추출 (unsafe 제거율 등) 및 Rich 대시보드 렌더링
    │
-   ├─► [Step 3: LLM 리팩토링] LLM API 연동 (GPT-4o / Gemini 등)
-   │     └─ 결과: 안전성과 관용성이 부여된 2차 Rust 코드
-   │
-   └─► [Step 4: 검증 및 피드백] Cargo Compiler (rustc) 검증
-         ├─ [에러 발생 시] 컴파일 에러 로그 파싱 -> LLM 재수정 요청 (Feedback Loop)
-         └─ [컴파일 성공 시] 최종 Safe Rust 소스코드 반환 및 사용자 출력 (.rs)
-```
+   └─► [Output] Safe & Idiomatic Rust Code (.rs)
 
-### 주요 컴포넌트 (Key Components)
 
-- **Main Pipeline Orchestrator:** 파이프라인의 전체 상태를 관리하고 각 모듈(C2Rust, LLM API, Compiler) 간의 데이터 흐름을 제어하는 핵심 엔진.
-- **Base Translator Module:** C2Rust CLI를 Python 서브프로세스로 호출하고 결과물을 파싱.
-- **Prompting & API Controller:** 영어로 작성된 통찰력 프롬프트 템플릿을 관리하고, LLM API 호출의 비동기 처리 및 토큰/비용 최적화를 담당.
-- **Auto-Repair Loop:** 코드를 `cargo check`로 검증하고, 발생한 에러 로그를 분석하여 LLM에게 수정을 지시하는 자동 복구 루틴.
+🚀 시작하기 (Getting Started)
 
-## 3. 항목별 개발 요구사항 (Requirements)
+1. 시스템 요구사항 (Prerequisites)
 
-### 3.1. 기능적 요구사항 (Functional Requirements)
+원활한 동작을 위해 다음의 시스템 패키지들이 요구됩니다. (운영 환경의 파편화를 막기 위해 Docker 기반 배포 환경을 권장합니다.)
 
-| **ID** | **요구사항 명** | **상세 내용** | **우선순위** |
-| --- | --- | --- | --- |
-| F-01 | 메인 엔진 제어기 구현 | 사용자의 단일 명령어 실행으로 전체 파이프라인이 순차적으로 작동하는 컨트롤러 스크립트 구축 | High |
-| F-02 | LLM API 자동화 | Python 환경에서 지정된 LLM API와 통신하며 대량의 변환 요청을 안정적으로 처리 | High |
-| F-03 | 영문 프롬프트 템플릿 | 문자열, 배열, 구조체 등 핵심 패턴에 대한 Insight Prompt를 영어로 작성 및 모듈화 관리 | High |
-| F-04 | 자동 컴파일 검증 | 생성된 코드를 대상으로 백그라운드에서 `cargo check`를 실행하여 컴파일 가능 여부 판단 | High |
-| F-05 | 에러 피드백 루프 | 컴파일 실패 시 stderr 로그를 파싱하고, 이를 프롬프트에 결합하여 재시도하는 로직 구현 (최대 반복 횟수 제한) | High |
-| F-06 | 최종 결과물 반환 | 파이프라인 종료 시 원본 코드와 변환된 `.rs` 코드 비교본을 사용자 디렉토리에 명확히 저장 및 안내 | High |
+Python 3.10+
 
-### 3.2. 비기능적 요구사항 (Non-Functional Requirements)
+Rust Toolchain (cargo, rustc)
 
-| **ID** | **요구사항 명** | **상세 내용** | **우선순위** |
-| --- | --- | --- | --- |
-| NF-01 | 모듈화된 설계 | 메인 엔진과 각 파이프라인 단계(변환, API 요청, 검증)는 독립적인 모듈로 분리되어야 함 | High |
-| NF-02 | 확장성 보장 | 새로운 실패 패턴이나 프롬프트 규칙이 발견될 경우, 핵심 엔진 수정 없이 템플릿 추가만으로 동작해야 함 | High |
-| NF-03 | API 예외 처리 | 네트워크 지연, API 호출 한도 초과(Rate Limit) 등에 대비한 재시도(Retry) 및 예외 처리 로직 구현 | Medium |
+C2Rust (cargo install c2rust를 통해 설치)
 
-## 4. 기술 스택 (Tech Stack)
+시스템 C/C++ 컴파일러 (build-essential, llvm, clang)
 
-- **Core Languages:** `Python 3.10+` (Main Engine & Automation), `Rust` (Target Language), `C` (Source Language)
-- **Transpiler & Build Tools:** `C2Rust`, `Cargo`
-- **LLM APIs:** `OpenAI API (GPT-4o)` or `Google Gemini API`
-- **Environment:** `Linux/Ubuntu` or `WSL2` (C2Rust 호환성 및 파이프라인 구동용)
+2. 설치 (Installation)
 
-## 5. 단계별 개발 마일스톤 (3개월 / 약 12주 계획)
+git clone [https://github.com/your-org/Oxidizer.git](https://github.com/your-org/Oxidizer.git)
+cd Oxidizer
 
-- [ ]  **Month 1 (1~4주차): 메인 파이프라인 MVP 구축**
-    - C2Rust 설치 및 로컬 변환 환경 세팅
-    - [Main Engine] C 코드 로드 -> C2Rust 실행 -> LLM API 호출 -> 결과물 저장에 이르는 기본 파이썬 컨트롤러 스크립트 작성
-    - 소규모 C 코드 대상 기초 변환 테스트 및 API 연동 안정성 확보
-- [ ]  **Month 2 (5~8주차): 영문 Insight Prompting 및 피드백 루프 구현**
-    - CRUST-bench 데이터셋을 활용하여 `unsafe` 발생 주요 실패 패턴 수동 분석
-    - 분석 결과를 바탕으로 최적화된 영문 Insight Prompt 작성 및 Prompt Generator 모듈 연동
-    - 컴파일 에러 발생 시 로그를 파싱하여 LLM에 재요청하는 Auto-Repair (Feedback) Loop 통합
-- [ ]  **Month 3 (9~12주차): 대규모 검증 및 최종 고도화**
-    - 배치(Batch) 처리 스크립트 작성을 통한 대량의 파일 변환 자동화
-    - Syzygy_Zopfli 등 실무 복잡도 코드 대상 일반화 성능 검증 (컴파일 성공률 및 unsafe 감소율 정량 평가)
-    - 파이프라인 코드 리팩토링, 사용자 친화적 출력 포맷 적용 및 최종 결과보고서 작성
+# 가상환경 생성 및 의존성 패키지 설치
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
 
-## 6. 최종 배포 및 활용 계획 (Deployment Plan)
 
-- 본 프로젝트는 누구나 쉽게 C-to-Rust 변환 파이프라인을 사용할 수 있도록 Docker 기반의 배포 환경을 제공할 예정입니다.
-    - 격리된 환경 제공: 사용자는 로컬 환경에 C2Rust, Rust Toolchain, Python 등을 복잡하게 설치할 필요가 없습니다.
-    - 원클릭 실행: 제공되는 Dockerfile을 빌드하고 실행 명령어(docker run ...)에 C 소스 코드 경로만 넘겨주면, 컨테이너 내부에서 변환 파이프라인이 즉시 가동되어 최종 .rs 파일만 사용자에게 반환됩니다.
-    - 재현성 보장: OS(Windows, Mac, Linux)에 구애받지 않고 동일한 변환 품질과 동작을 보장합니다.
+3. 환경 변수 설정 (Configuration)
+
+다중 LLM 지원을 위해 프로젝트 루트에 .env 파일을 생성하고 발급받은 API 키를 기입합니다.
+
+OPENAI_API_KEY="your-openai-api-key"
+ANTHROPIC_API_KEY="your-anthropic-api-key"
+GEMINI_API_KEY="your-gemini-api-key"
+
+
+4. 실행 (Usage)
+
+Oxidizer는 표준화된 서브 커맨드(Sub-commands) CLI를 제공합니다.
+
+단일 파일 변환 모드 (Run)
+
+# 기본 변환 실행 (기본 모델 사용)
+python3 src/main.py run test.c
+
+# 특정 LLM 벤더 및 모델 지정 실행
+python3 src/main.py run test.c --llm gemini --llm-model gemini-2.5-pro
+
+
+대량 디렉토리 변환 모드 (Batch)
+
+# data/inputs/ 폴더 내의 지정된 디렉토리 전체 순차 변환
+python3 src/main.py batch my_legacy_c_project --llm gpt --llm-model gpt-4o
+
+
+에블레이션 스터디 모드 (Ablation Study)
+특정 아키텍처 모듈의 성능 기여도를 평가하기 위해 각 기능을 개별적으로 비활성화할 수 있습니다.
+
+python3 src/main.py run test.c --disable-rag --disable-repair
