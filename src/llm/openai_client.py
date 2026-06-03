@@ -23,7 +23,8 @@ class OpenAIClient(BaseLLMClient):
         self.temperature = temperature
 
     def generate(self, messages: List[Dict[str, str]]) -> str:
-        logger.info("🤖 [LLM] OpenAI(GPT)에게 변환/수정을 요청하는 중...")
+        # 터미널 깨짐 방지를 위해 info -> debug로 강등
+        logger.debug("🤖 [LLM] OpenAI(GPT)에게 변환/수정을 요청하는 중...")
         try:
             response = self.client.chat.completions.create(
                 model=self.model_name,
