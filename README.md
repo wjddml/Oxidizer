@@ -1,5 +1,47 @@
 # Oxidizer: Human-Insight Guided C-to-Rust Transpiler
 
+## Docker deployment
+
+Build the image:
+
+```bash
+docker build -t oxidizer:latest .
+```
+
+The Docker image uses `requirements-docker.txt` to avoid installing GPU/CUDA packages that are not needed for this CPU-based deployment.
+
+Create local input and output folders:
+
+```bash
+mkdir -p input output
+```
+
+Copy your C source file into `input/`, then run the container:
+
+```bash
+docker run --rm \
+  --env-file .env \
+  -v "$(pwd)/input:/app/data/inputs" \
+  -v "$(pwd)/output:/app/data/outputs" \
+  oxidizer:latest \
+  --target example.c
+```
+
+On Windows PowerShell:
+
+```powershell
+docker run --rm `
+  --env-file .env `
+  -v ${PWD}/input:/app/data/inputs `
+  -v ${PWD}/output:/app/data/outputs `
+  oxidizer:latest `
+  --target example.c
+```
+
+The current CLI reads C files from `/app/data/inputs` and writes generated Rust artifacts under `/app/data/outputs`.
+
+Use `.env.example` as a template for local API keys. Do not commit a real `.env` file.
+
 > 인간 통찰력 기반 LLM 제어를 통한 C 코드의 관용적(Idiomatic) Rust 자동 변환 파이프라인
 > 
 > 

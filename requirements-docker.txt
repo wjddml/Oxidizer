@@ -1,0 +1,13 @@
+anthropic==0.105.2
+chromadb==1.5.9
+google-genai==1.75.0
+google-generativeai==0.8.6
+libclang==18.1.1
+networkx==3.6.1
+openai==2.24.0
+python-dotenv==1.2.2
+PyYAML==6.0.3
+scikit-learn==1.8.0
+sentence-transformers==5.5.1
+tree-sitter==0.25.2
+tree-sitter-c==0.24.2

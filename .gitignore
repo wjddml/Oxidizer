@@ -10,7 +10,7 @@ venv.bak/
 
 Python
 
-pycache/
+__pycache__/
 *.py[cod]
 *$py.class
 *.so
@@ -59,6 +59,6 @@ IDEs and Editors
 Project specific logs and outputs
 
 logs/
-.log
+*.log
 data/outputs/
 !data/outputs/.gitkeep
