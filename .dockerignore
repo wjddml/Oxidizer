@@ -7,6 +7,7 @@ __pycache__/
 *.pyo
 *.log
 .env
+.env.example
 .venv/
 venv/
 env/

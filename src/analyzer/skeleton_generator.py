@@ -11,10 +11,14 @@ class SkeletonGenerator:
     C 코드의 AST를 분석하여 함수 본문을 제외한 인터페이스(구조체, 시그니처 등)를 추출하고,
     LLM을 이용해 unimplemented!() 매크로로 채워진 Rust Skeleton 프로젝트를 생성합니다.
     """
-    def __init__(self, config_path: str = "config.yaml"):
+    def __init__(self, config_path: str = "config.yaml", llm_provider: str = None, llm_model: str = None):
         self.c_language = Language(ts_c.language())
         self.parser = Parser(self.c_language)
-        self.llm = create_llm_client(config_path)
+        self.llm = create_llm_client(
+            config_path,
+            provider_override=llm_provider,
+            model_override=llm_model
+        )
         
     def _extract_c_interface(self, c_code: str) -> str:
         """

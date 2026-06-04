@@ -40,7 +40,11 @@ class Orchestrator:
         self.test_runner = TestRunner()
         self.workspace = WorkspaceManager(self.output_dir)
         
-        self.skeleton_gen = SkeletonGenerator(config_path)
+        self.skeleton_gen = SkeletonGenerator(
+            config_path,
+            llm_provider=llm_provider,
+            llm_model=llm_model
+        )
         self.c_extractor = CSemanticExtractor()
         self.rag_retriever = RagRetriever()
         
