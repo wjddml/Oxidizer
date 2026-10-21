@@ -67,7 +67,7 @@ C2Rust (cargo install c2rust를 통해 설치)
 
 2. 설치 (Installation)
 
-git clone [https://github.com/your-org/Oxidizer.git](https://github.com/your-org/Oxidizer.git)
+git clone [https://github.com/wjddml/Oxidizer.git](https://github.com/wjddml/Oxidizer.git)
 cd Oxidizer
 
 # 가상환경 생성 및 의존성 패키지 설치
